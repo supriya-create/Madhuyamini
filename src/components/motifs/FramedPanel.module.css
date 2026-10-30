@@ -1,0 +1,31 @@
+.figure {
+  margin: 0;
+}
+
+.frame {
+  position: relative;
+  padding: 0.75rem;
+  border: 1px solid var(--ornament);
+}
+
+/* The hatched band; the inner panel's opaque background hides it in the centre. */
+.frame::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-color: var(--ornament);
+  mask-image: var(--motif-hatch);
+  mask-size: 8px 8px;
+}
+
+.inner {
+  position: relative;
+  border: 1px solid var(--ornament);
+  background-color: var(--surface);
+}
+
+.caption {
+  margin-block-start: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}

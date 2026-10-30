@@ -1,0 +1,101 @@
+/*
+ * Design tokens. Contrast ratios and usage rules: docs/design-system.md.
+ * Components consume the semantic tokens (--surface, --text, …) so that a
+ * section can switch to a dark surface without per-component overrides.
+ */
+@layer tokens {
+  :root {
+    /* ---- Palette ---------------------------------------------------- */
+    --color-ivory: #fbf7ef;
+    --color-cream: #f4ecdd;
+    --color-sand: #e7dac2;
+    --color-ink: #231a15;
+    --color-umber: #5a4335;
+    --color-muted: #6e5a4a;
+    --color-sindoor: #9b2d20;
+    --color-sindoor-deep: #7a2118;
+    --color-terracotta: #b4583a; /* large text and ornament only */
+    --color-terracotta-text: #9a4529;
+    --color-gold: #b08d3e; /* ornament only on light surfaces; text only on ink */
+    --color-gold-text: #7a5f22;
+    --color-leaf: #3d5a3a;
+    --color-indigo: #2e3e5c;
+    --color-error: #b42318;
+    --color-warning: #8a5300;
+    --color-border-strong: #8c7862;
+
+    /* ---- Semantic roles (light surfaces) ---------------------------- */
+    --surface: var(--color-ivory);
+    --text: var(--color-ink);
+    --text-secondary: var(--color-umber);
+    --text-muted: var(--color-muted);
+    --link: var(--color-sindoor);
+    --link-hover: var(--color-sindoor-deep);
+    --rule: var(--color-sand);
+    --control-border: var(--color-border-strong);
+    --hover-wash: var(--color-cream);
+    --ornament: var(--color-gold);
+    --focus: var(--color-ink);
+
+    /* ---- Typography ------------------------------------------------- */
+    --font-serif: var(--font-cormorant), Georgia, "Times New Roman", serif;
+    --font-sans:
+      var(--font-mukta), system-ui, -apple-system, "Segoe UI", sans-serif;
+
+    --text-xs: 0.75rem;
+    --text-sm: 0.875rem;
+    --text-base: 1rem;
+    --text-lg: 1.125rem;
+    --text-xl: 1.375rem;
+    --text-2xl: clamp(1.625rem, 1.35rem + 1.2vw, 2rem);
+    --text-3xl: clamp(2rem, 1.55rem + 2vw, 2.75rem);
+    --text-4xl: clamp(2.5rem, 1.7rem + 3.6vw, 4rem);
+
+    --measure: 68ch;
+    --tracking-eyebrow: 0.12em;
+
+    /* ---- Space ------------------------------------------------------ */
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.5rem;
+    --space-6: 2rem;
+    --space-7: 3rem;
+    --space-8: 4rem;
+    --space-9: 6rem;
+    --space-10: 8rem;
+
+    --section-padding: clamp(3.5rem, 8vw, 7.5rem);
+    --gutter: clamp(1rem, 4vw, 2.5rem);
+    --grid-gap: clamp(1rem, 2vw, 1.5rem);
+    --container-max: 80rem;
+    --container-narrow: 48rem;
+
+    /* ---- Shape, elevation, motion ----------------------------------- */
+    --radius-0: 0;
+    --radius-1: 2px;
+    --radius-round: 50%;
+    --shadow-overlay: 0 12px 32px -8px rgb(35 26 21 / 0.28);
+
+    --duration-fast: 120ms;
+    --duration-base: 200ms;
+    --duration-slow: 320ms;
+    --ease-out: cubic-bezier(0.2, 0, 0, 1);
+
+    /* ---- Layout ----------------------------------------------------- */
+    --header-height: 3.75rem;
+    --tap-target: 2.75rem;
+
+    /* ---- Ornament --------------------------------------------------- */
+    /* Kachni (line-hatching) tile, used as a mask so its colour comes from --ornament. */
+    --motif-hatch: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M-2 2l4-4M0 8l8-8M6 10l4-4' stroke='black' stroke-width='1.25'/%3E%3C/svg%3E");
+  }
+
+  /* Desktop header: utility row + category navigation row. */
+  @media (min-width: 64em) {
+    :root {
+      --header-height: 7rem;
+    }
+  }
+}

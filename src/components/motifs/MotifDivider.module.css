@@ -1,0 +1,21 @@
+.divider {
+  padding-block: 3px;
+  border-block: 1px solid var(--ornament);
+}
+
+.band {
+  display: block;
+  height: 0.5rem;
+  background-color: var(--ornament);
+  mask-image: var(--motif-hatch);
+  mask-size: 8px 8px;
+}
+
+.full {
+  width: 100%;
+}
+
+.short {
+  width: 6rem;
+  margin-inline: auto;
+}

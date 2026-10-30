@@ -1,0 +1,13 @@
+.bar {
+  padding: var(--space-2) var(--gutter);
+  background-color: var(--color-ink);
+  color: var(--color-ivory);
+  text-align: center;
+  --focus: var(--color-ivory);
+}
+
+.message {
+  font-size: var(--text-sm);
+  letter-spacing: 0.02em;
+  color: inherit;
+}

@@ -1,0 +1,44 @@
+.header {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 40rem;
+  margin-block-end: var(--space-8);
+}
+
+.list {
+  display: grid;
+  gap: var(--space-7) var(--grid-gap);
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: grid;
+  gap: var(--space-3);
+  align-content: start;
+  padding-block-start: var(--space-5);
+  border-block-start: 1px solid var(--control-border);
+}
+
+.numeral {
+  font-family: var(--font-serif);
+  font-size: var(--text-3xl);
+  font-style: normal;
+  line-height: 1;
+  color: var(--color-terracotta);
+}
+
+.title {
+  font-size: var(--text-2xl);
+}
+
+.body {
+  max-width: 38ch;
+  color: var(--text-secondary);
+}
+
+@media (min-width: 48em) {
+  .list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
