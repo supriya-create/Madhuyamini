@@ -6,7 +6,7 @@ import { APIError, createAuthMiddleware } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 
 import { db } from "@/server/db";
-import { sendEmail } from "@/server/email";
+import { sendEmailAfterResponse } from "@/server/email";
 import {
   resetPasswordMessage,
   verifyEmailMessage,
@@ -27,9 +27,8 @@ import {
 
 const DAY = 60 * 60 * 24;
 
-/** 14-day inactivity timeout (P4). The 30-day absolute cap is enforced in current-user.ts. */
+/** 14-day inactivity timeout (P4). The 30-day absolute cap lives in session-lifetime.ts. */
 export const SESSION_IDLE_SECONDS = 14 * DAY;
-export const SESSION_ABSOLUTE_SECONDS = 30 * DAY;
 
 /**
  * Paths served over HTTP by the catch-all route. Everything else is reached
@@ -63,7 +62,7 @@ export const auth = betterAuth({
     sendResetPassword: async ({ user, token }) => {
       const url = new URL("/reset-password", env.siteUrl);
       url.searchParams.set("token", token);
-      await sendEmail(
+      await sendEmailAfterResponse(
         resetPasswordMessage({
           to: user.email,
           name: user.name,
@@ -78,7 +77,7 @@ export const auth = betterAuth({
     autoSignInAfterVerification: false,
     expiresIn: DAY,
     sendVerificationEmail: async ({ user, url }) => {
-      await sendEmail(
+      await sendEmailAfterResponse(
         verifyEmailMessage({ to: user.email, name: user.name, url }),
       );
     },

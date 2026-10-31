@@ -7,7 +7,8 @@ import { z } from "zod";
 import type { UserRole } from "@/generated/prisma/enums";
 import { AppError } from "@/server/errors";
 
-import { SESSION_ABSOLUTE_SECONDS, auth } from "./auth";
+import { auth } from "./auth";
+import { isWithinAbsoluteLifetime } from "./session-lifetime";
 
 /**
  * Data-access layer for identity. Every page, layout and Server Action that
@@ -53,9 +54,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const { session, user } = result;
 
   // P4: 30-day absolute lifetime, on top of Better Auth's 14-day idle timeout.
-  const ageSeconds =
-    (Date.now() - new Date(session.createdAt).getTime()) / 1000;
-  if (ageSeconds > SESSION_ABSOLUTE_SECONDS) {
+  if (!isWithinAbsoluteLifetime(session.createdAt)) {
     await auth.api.revokeSession({
       headers: await headers(),
       body: { token: session.token },

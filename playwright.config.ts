@@ -45,6 +45,8 @@ export default defineConfig({
     timeout: 240_000,
     env: {
       SITE_ENV: "development",
+      // Emailed links are built from SITE_URL; it must be the e2e server's origin.
+      SITE_URL: baseURL,
       EMAIL_TRANSPORT: "file",
       EMAIL_OUTBOX_DIR: MAIL_DIR,
       PASSWORD_BREACH_CHECK: "off",

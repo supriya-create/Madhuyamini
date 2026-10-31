@@ -85,3 +85,58 @@ describe("breach lookup", () => {
     expect(lookup).not.toHaveBeenCalled();
   });
 });
+
+describe("hibpLookup transport (k-anonymity)", () => {
+  it("sends only the five-character SHA-1 prefix, never the password or full hash", async () => {
+    const { hibpLookup } = await import("./password-policy");
+    const calls: string[] = [];
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation((input) => {
+        calls.push(String(input));
+        return Promise.resolve(new Response("ABCDE:1\r\n", { status: 200 }));
+      });
+    const password = "peacock on the pallu";
+    const prefix = sha1Prefix(password);
+    const body = await hibpLookup(prefix);
+
+    expect(body).toBe("ABCDE:1\r\n");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toBe(`https://api.pwnedpasswords.com/range/${prefix}`);
+    expect(calls[0]).not.toContain(password);
+    expect(calls[0]?.split("/").pop()).toHaveLength(5);
+    fetchSpy.mockRestore();
+  });
+
+  it("returns null (fail open) on network errors and non-OK responses", async () => {
+    const { hibpLookup } = await import("./password-policy");
+    const failing = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new Error("offline"));
+    expect(await hibpLookup("ABCDE")).toBeNull();
+    failing.mockRestore();
+    const serverError = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("", { status: 503 }));
+    expect(await hibpLookup("ABCDE")).toBeNull();
+    serverError.mockRestore();
+  });
+
+  it("fail-open never bypasses the local rules", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const unavailable = vi.fn().mockResolvedValue(null);
+    expect(await checkPassword("password123", {}, unavailable)).toBe(
+      "too_predictable",
+    );
+    expect(await checkPassword("short", {}, unavailable)).toBe("too_short");
+    expect(
+      await checkPassword(
+        "asha@example.com",
+        { email: "asha@example.com" },
+        unavailable,
+      ),
+    ).toBe("matches_email");
+    expect(unavailable).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});

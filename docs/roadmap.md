@@ -10,7 +10,7 @@ Related: [architecture.md](architecture.md) · [design-system.md](design-system.
 | 2   | Database and backend foundation             | **Implemented; open items**       | D4 (deferred to 11)    |
 | 3   | Product catalog                             | **Implemented; open items**       | D2 (imagery)           |
 | 4   | Authentication and customer accounts        | **Proposed** ([auth.md](auth.md)) | D3, D5, P1–P5          |
-| 5   | Cart and wishlist                           | Not started                       | none                   |
+| 5   | Cart and wishlist                           | **Proposed** ([cart.md](cart.md)) | C1–C6                  |
 | 6   | Checkout and payments (Razorpay + COD)      | Not started                       | D6, D7                 |
 | 7   | Admin dashboard                             | Not started                       | none                   |
 | 8   | Advanced e-commerce features                | Not started                       | D7                     |

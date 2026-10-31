@@ -342,3 +342,84 @@ describe("HTTP surface", () => {
     expect(await testDb.session.count()).toBe(0);
   });
 });
+
+describe("security review regressions", () => {
+  beforeEach(async () => {
+    await auth.api.signUpEmail({ body: customer });
+  });
+
+  it("rejects an expired session on the very next request, without any sweep", async () => {
+    const { requestHeaders } = await signIn();
+    expect(
+      await auth.api.getSession({ headers: requestHeaders }),
+    ).not.toBeNull();
+
+    await testDb.session.updateMany({
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+    expect(await auth.api.getSession({ headers: requestHeaders })).toBeNull();
+    expect(
+      await auth.api.listSessions({ headers: requestHeaders }).catch(() => []),
+    ).toEqual([]);
+  });
+
+  it("never lets a customer revoke another customer's session", async () => {
+    const victim = await signIn();
+    const victimToken = (
+      await auth.api.getSession({ headers: victim.requestHeaders })
+    )?.session.token;
+    if (!victimToken) throw new Error("expected victim session");
+
+    await auth.api.signUpEmail({
+      body: {
+        name: "Ravi",
+        email: "ravi@example.com",
+        password: "lotus medallion dupatta",
+      },
+    });
+    const attacker = await signIn(
+      "ravi@example.com",
+      "lotus medallion dupatta",
+    );
+    await auth.api.revokeSession({
+      headers: attacker.requestHeaders,
+      body: { token: victimToken },
+    });
+
+    expect(
+      await auth.api.getSession({ headers: victim.requestHeaders }),
+    ).not.toBeNull();
+    expect(await testDb.session.count()).toBe(2);
+  });
+
+  it("refuses role and phone changes through Better Auth's own update endpoint", async () => {
+    const { requestHeaders } = await signIn();
+    await expect(
+      auth.api.updateUser({
+        headers: requestHeaders,
+        body: { role: "ADMIN" } as { name?: string },
+      }),
+    ).rejects.toThrow(/role is not allowed/);
+    await expect(
+      auth.api.updateUser({
+        headers: requestHeaders,
+        body: { phone: "+911234567890" } as { name?: string },
+      }),
+    ).rejects.toThrow(/phone is not allowed/);
+    const user = await testDb.user.findUniqueOrThrow({
+      where: { email: customer.email },
+    });
+    expect(user).toMatchObject({ role: "CUSTOMER", phone: null });
+  });
+
+  it("answers reset requests for known and unknown emails with the same shape", async () => {
+    const known = await auth.api.requestPasswordReset({
+      body: { email: customer.email },
+    });
+    const unknown = await auth.api.requestPasswordReset({
+      body: { email: "nobody@example.com" },
+    });
+    expect(Object.keys(known).sort()).toEqual(Object.keys(unknown).sort());
+    expect(known.status).toBe(unknown.status);
+  });
+});
