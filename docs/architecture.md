@@ -1,6 +1,6 @@
 # Madhuyamini — Architecture
 
-Status: **Approved 31 Oct 2026** (D1 decided: route groups). Phase 1 is implemented; see [roadmap.md](roadmap.md).
+Status: **Approved 31 Oct 2026** (D1 decided: route groups). Phases 1–2 are implemented; see [roadmap.md](roadmap.md) and [data-model.md](data-model.md).
 
 Companion documents: [roadmap.md](roadmap.md) (phases and the Phase 1 checklist) and [design-system.md](design-system.md).
 
@@ -25,23 +25,23 @@ There is no existing code to preserve.
 
 I checked the npm registry on 31 Oct 2026. Exact versions will be locked in `package-lock.json`. Each dependency is added in the phase that first needs it, not up front.
 
-| Concern                    | Choice                              | Version                            | Notes                                                                                                                                                                            |
-| -------------------------- | ----------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Runtime                    | Node.js LTS                         | 24.x on Vercel; ≥ 22.12 locally    | Node 22 leaves maintenance in April 2027. Standardise on 24 before launch.                                                                                                       |
-| Framework                  | Next.js App Router                  | 16.4.x                             | Turbopack by default. `proxy.ts` replaces `middleware.ts`. `cookies()`, `headers()` and `params` are async. `next lint` is gone, so scripts call ESLint directly.                |
-| UI                         | React                               | 19.x (as required by Next)         |                                                                                                                                                                                  |
-| Language                   | TypeScript                          | **5.9.x, pinned**                  | npm `latest` is 7.0.2, but `typescript-eslint` 8.72 only supports TS < 6.1. Revisit when the lint toolchain supports TS 7.                                                       |
-| ORM                        | Prisma + `@prisma/adapter-pg`       | **7.10.x, pinned**                 | npm's `latest` tag currently points to `8.0.0-rc.29`, a release candidate, so a bare `npm i prisma` would install it. Prisma 7 requires `prisma.config.ts` and a driver adapter. |
-| Database                   | PostgreSQL                          | Match hosted major version locally | See D4.                                                                                                                                                                          |
-| Validation                 | Zod                                 | 4.x                                |                                                                                                                                                                                  |
-| Unit and integration tests | Vitest                              | 5.x                                | Requires Node ≥ 22.12.                                                                                                                                                           |
-| End-to-end tests           | Playwright + `@axe-core/playwright` | 1.64.x / 4.14.x                    | axe runs automated WCAG checks inside e2e tests.                                                                                                                                 |
-| Icons                      | `lucide-react`                      | 1.x                                | Per-icon imports (tree-shaken).                                                                                                                                                  |
-| Client state               | Zustand                             | 5.x                                | Added only when cross-component client state appears (cart drawer, Phase 5).                                                                                                     |
-| Payments                   | `razorpay` Node SDK                 | 2.9.x                              | Server-only.                                                                                                                                                                     |
-| Email                      | Resend                              | 6.x                                | Needs a verified sending domain (SPF/DKIM).                                                                                                                                      |
-| Password hashing           | `@node-rs/argon2`                   | 2.x                                | Argon2id. Only if we own authentication (D3).                                                                                                                                    |
-| Images                     | Cloudinary                          | n/a                                | Served through a custom `next/image` loader that builds transformation URLs (`f_auto,q_auto,w_…`). No client SDK and no double optimisation through Vercel.                      |
+| Concern                    | Choice                               | Version                            | Notes                                                                                                                                                                            |
+| -------------------------- | ------------------------------------ | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime                    | Node.js LTS                          | 24.x on Vercel; ≥ 22.12 locally    | Node 22 leaves maintenance in April 2027. Standardise on 24 before launch.                                                                                                       |
+| Framework                  | Next.js App Router                   | 16.4.x                             | Turbopack by default. `proxy.ts` replaces `middleware.ts`. `cookies()`, `headers()` and `params` are async. `next lint` is gone, so scripts call ESLint directly.                |
+| UI                         | React                                | 19.x (as required by Next)         |                                                                                                                                                                                  |
+| Language                   | TypeScript                           | **5.9.x, pinned**                  | npm `latest` is 7.0.2, but `typescript-eslint` 8.72 only supports TS < 6.1. Revisit when the lint toolchain supports TS 7.                                                       |
+| ORM                        | Prisma + `@prisma/adapter-pg` + `pg` | **7.10.x, pinned**; `pg` < 9       | npm's `latest` tag currently points to `8.0.0-rc.29`, a release candidate, so a bare `npm i prisma` would install it. Prisma 7 requires `prisma.config.ts` and a driver adapter. |
+| Database                   | PostgreSQL                           | Match hosted major version locally | See D4.                                                                                                                                                                          |
+| Validation                 | Zod                                  | 4.x                                |                                                                                                                                                                                  |
+| Unit and integration tests | Vitest                               | 5.x                                | Requires Node ≥ 22.12.                                                                                                                                                           |
+| End-to-end tests           | Playwright + `@axe-core/playwright`  | 1.64.x / 4.14.x                    | axe runs automated WCAG checks inside e2e tests.                                                                                                                                 |
+| Icons                      | `lucide-react`                       | 1.x                                | Per-icon imports (tree-shaken).                                                                                                                                                  |
+| Client state               | Zustand                              | 5.x                                | Added only when cross-component client state appears (cart drawer, Phase 5).                                                                                                     |
+| Payments                   | `razorpay` Node SDK                  | 2.9.x                              | Server-only.                                                                                                                                                                     |
+| Email                      | Resend                               | 6.x                                | Needs a verified sending domain (SPF/DKIM).                                                                                                                                      |
+| Password hashing           | `@node-rs/argon2`                    | 2.x                                | Argon2id. Only if we own authentication (D3).                                                                                                                                    |
+| Images                     | Cloudinary                           | n/a                                | Served through a custom `next/image` loader that builds transformation URLs (`f_auto,q_auto,w_…`). No client SDK and no double optimisation through Vercel.                      |
 
 **Lint toolchain:** ESLint stays on 9.39.x. Next's lint plugins (react, import, jsx-a11y) don't declare ESLint 10 support yet.
 
@@ -56,10 +56,12 @@ madhuyamini/
 ├── .github/workflows/ci.yml        # typecheck · lint · unit · build · e2e
 ├── docs/                           # roadmap, architecture, design system, ADRs, business rules
 ├── e2e/                            # Playwright specs, axe checks, pending-routes.ts (links to unbuilt routes)
-├── prisma/                         # Phase 2
+├── prisma/
 │   ├── schema.prisma
-│   ├── migrations/
-│   └── seed.ts                     # local/test fixtures only; refuses to run against production
+│   ├── migrations/                 # generated SQL + hand-written CHECK constraints
+│   ├── seed.ts                     # entry: env, guard, client
+│   └── seed/                       # guard.ts · fixtures.ts · catalog.ts (idempotent upserts)
+├── prisma.config.ts                # Prisma 7 CLI config (loads .env.local)
 ├── public/                         # favicon, logo SVG, static brand assets
 ├── src/
 │   ├── app/
@@ -97,14 +99,18 @@ madhuyamini/
 │   │       └── components/
 │   ├── server/                     # server-only infrastructure
 │   │   ├── env.ts · env-schema.ts  # Zod-validated environment; fails fast
-│   │   ├── db.ts                   # Prisma client singleton (Phase 2)
+│   │   ├── db.ts                   # Prisma client singleton (server-only)
+│   │   ├── prisma-client.ts        # client factory shared by db.ts, seed and tests
 │   │   ├── errors.ts               # AppError → safe user-facing messages
 │   │   └── log.ts                  # structured logging with PII redaction
 │   ├── content/                    # editorial copy, navigation taxonomy, site config (nullable brand data)
-│   ├── lib/                        # isomorphic pure helpers: money (paise ↔ ₹), routes, cx
+│   ├── generated/prisma/           # Prisma client output (git-ignored; `prisma generate`)
+│   ├── lib/                        # isomorphic pure helpers: money (paise ↔ ₹), routes, cx, validation
 │   ├── styles/                     # reset.css · tokens.css · globals.css · fonts.ts
 │   └── proxy.ts                    # optimistic redirects only; never the sole authorisation check
-├── tests/integration/              # Vitest against a real PostgreSQL test database
+├── tests/
+│   ├── integration/                # Vitest against a real PostgreSQL test database (name must end in _test)
+│   └── stubs/server-only.ts        # replaces `server-only` under Vitest
 ├── .env.example                    # every variable name, no values
 ├── CLAUDE.md                       # non-negotiable engineering rules for every contributor session
 └── next.config.ts · tsconfig.json · eslint.config.mjs · vitest.config.ts · playwright.config.ts
@@ -203,7 +209,11 @@ The brief asked to keep the initial homepage in `src/app/page.tsx`. The owner ap
 
 ---
 
-## 6. Data model preview (designed in detail in Phase 2)
+## 6. Data model
+
+Implemented in Phase 2. The authoritative description, including every constraint and the deletion rules, is [data-model.md](data-model.md). The preview below is kept for the reasoning behind it.
+
+### Original preview
 
 The brief's entities are User, Address, Category, Product, ProductImage, ProductVariant, Inventory, Cart, CartItem, Wishlist, Order, OrderItem, Payment, Coupon, Review, Shipment, ReturnRequest and CustomRequest. I propose these additions, each with a concrete reason:
 
@@ -241,7 +251,7 @@ Core rules the schema will enforce:
 | **D1** | Homepage location and layout split    | **Decided**      | Route groups; homepage at `src/app/(storefront)/page.tsx` (§4).                                                                                                                                                                                                                                                                                           |
 | **D2** | Brand assets and copy facts           | Phase 1 (during) | You supply the logo, imagery and real brand facts. No stock or AI imagery. Until they arrive, image frames show an obvious development-only placeholder that cannot ship (it fails a test in production mode).                                                                                                                                            |
 | **D3** | Authentication approach               | Phase 4          | Auth.js v5 is still `5.0.0-beta.32` (July 2026), so I don't recommend it for production. **Email and password only (Google later):** custom database-backed sessions, which the brief already allows and which add the fewest dependencies. **Phone-OTP login wanted:** Better Auth 1.7 (a stack deviation needing your approval) saves substantial work. |
-| **D4** | Hosted PostgreSQL provider and region | Phase 2          | A provider with a **Mumbai** region, co-located with Vercel `bom1`. Confirm region availability for Neon and Supabase when choosing. Match the local PostgreSQL major version to the hosted one.                                                                                                                                                          |
+| **D4** | Hosted PostgreSQL provider and region | Phase 11 (was 2) | A provider with a **Mumbai** region, co-located with Vercel `bom1`. Confirm region availability for Neon and Supabase when choosing. Match the local PostgreSQL major version to the hosted one.                                                                                                                                                          |
 | **D5** | Rate-limit store                      | Phase 4          | In-memory limits don't work across serverless instances. Use a Postgres-backed limiter first (no new service). Move to Redis only if load requires it.                                                                                                                                                                                                    |
 | **D6** | Stock reservation for online payments | Phase 6          | Reserve at order creation with a 15-minute expiry. Release on failure or timeout via webhook and cron. Decrement for COD at confirmation.                                                                                                                                                                                                                 |
 | **D7** | Business rules                        | Phases 6–8       | Shipping zones and charges, COD eligibility and limits, returns window and exclusions, GST registration and invoicing, custom-artwork workflow, international shipping. To be documented in `docs/business-rules.md`.                                                                                                                                     |

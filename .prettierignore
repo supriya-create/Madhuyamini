@@ -5,3 +5,5 @@ next-env.d.ts
 playwright-report
 test-results
 coverage
+src/generated
+prisma/migrations

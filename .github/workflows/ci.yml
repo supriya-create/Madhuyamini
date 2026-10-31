@@ -16,9 +16,26 @@ jobs:
   verify:
     name: Typecheck, lint, test, build, e2e
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
+    services:
+      postgres:
+        # Hosted PostgreSQL providers are on 16/17; CI tracks the older line deliberately.
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: madhuyamini
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       SITE_ENV: development
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/madhuyamini
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/madhuyamini_test
     steps:
       # Actions are pinned to commit SHAs (tag in the comment) to protect the pipeline from tag moves.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -34,6 +51,16 @@ jobs:
       - run: npm run lint
       - run: npm run format:check
       - run: npm test
+
+      - name: Create the integration-test database
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE madhuyamini_test"
+
+      - name: Apply migrations to the development database
+        run: npm run db:deploy
+
+      - name: Integration tests (real PostgreSQL)
+        run: npm run test:integration
+
       - run: npm run build
 
       - name: Install Playwright browsers

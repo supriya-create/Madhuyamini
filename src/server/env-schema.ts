@@ -14,9 +14,21 @@ export interface ServerEnv {
   readonly siteEnv: SiteEnv;
   /** Canonical origin used for metadata and absolute URLs. */
   readonly siteUrl: URL;
+  /** PostgreSQL connection string. Never log or expose it. */
+  readonly databaseUrl: string;
 }
 
 const DEFAULT_SITE_URL = "http://localhost:3000";
+
+const POSTGRES_PROTOCOLS = new Set(["postgresql:", "postgres:"]);
+
+function isPostgresUrl(value: string): boolean {
+  try {
+    return POSTGRES_PROTOCOLS.has(new URL(value).protocol);
+  } catch {
+    return false;
+  }
+}
 
 /** Treat empty strings as unset, which is how most hosts represent a cleared variable. */
 const optionalString = z.preprocess(
@@ -31,6 +43,14 @@ const rawEnvSchema = z
       siteEnvSchema.default("development"),
     ),
     SITE_URL: optionalString.pipe(z.url({ protocol: /^https?$/ }).optional()),
+    DATABASE_URL: z
+      .string({ error: "DATABASE_URL is required" })
+      .trim()
+      .min(1, "DATABASE_URL is required")
+      .refine(
+        isPostgresUrl,
+        "DATABASE_URL must be a postgresql:// connection string",
+      ),
   })
   .superRefine((value, ctx) => {
     if (value.SITE_ENV !== "production") return;
@@ -62,6 +82,7 @@ export function parseEnv(source: EnvSource): ServerEnv {
     // Vercel sets VERCEL_ENV (production | preview | development) on every deployment.
     SITE_ENV: source.SITE_ENV ?? source.VERCEL_ENV,
     SITE_URL: source.SITE_URL,
+    DATABASE_URL: source.DATABASE_URL,
   });
 
   if (!result.success) {
@@ -73,5 +94,6 @@ export function parseEnv(source: EnvSource): ServerEnv {
   return {
     siteEnv: result.data.SITE_ENV,
     siteUrl: new URL(result.data.SITE_URL ?? DEFAULT_SITE_URL),
+    databaseUrl: result.data.DATABASE_URL,
   };
 }

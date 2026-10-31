@@ -8,6 +8,8 @@ import { routes } from "@/lib/routes";
 export interface NavLink {
   readonly label: string;
   readonly href: string;
+  /** Category slug, when the link targets a collection. */
+  readonly slug?: string;
 }
 
 export interface NavCategory {
@@ -30,6 +32,7 @@ function category(
     children: children.map(([slug, childLabel]) => ({
       label: childLabel,
       href: routes.collection(slug),
+      slug,
     })),
   } satisfies NavCategory;
 }

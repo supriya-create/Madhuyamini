@@ -8,6 +8,7 @@ Before changing code, read:
 - `docs/roadmap.md`: phase status and the current phase's checklist
 - `docs/architecture.md`: structure, layering rules, open decisions (D1–D9)
 - `docs/design-system.md`: tokens, type, components, accessibility rules
+- `docs/data-model.md`: schema, constraints, deletion behaviour
 
 ## Workflow
 
@@ -29,6 +30,8 @@ Before changing code, read:
 - **No fabricated content:** no invented products, reviews, ratings, statistics, testimonials, offers, contact details or imagery.
   - Unset brand data stays `null`, and the UI that would show it is hidden.
   - Missing imagery uses `ImagePending`, which throws in production on purpose.
+- **Database:** schema changes go through `prisma migrate dev`; invariants Prisma cannot express (`CHECK`) are hand-written into the migration SQL and tested in `tests/integration/`. Data access lives in `features/*/data.ts` with explicit `select`; UI never imports Prisma types (use the DTOs in `types.ts`). Storefront reads expose only `ACTIVE` products.
+- **Seed data** is development-only: idempotent, clearly labelled, guarded against production. Never add real merchandise, customers or reviews to fixtures.
 - **Links:** internal URLs come from `src/lib/routes.ts`. Links to routes not yet built must be listed in `e2e/pending-routes.ts`.
 - **Accessibility (WCAG 2.2 AA):** axe must report zero violations, and keyboard paths are covered by e2e tests.
 - **Tests:** never weaken or delete a test to make it pass. Fix the cause.

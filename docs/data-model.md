@@ -1,6 +1,6 @@
 # Madhuyamini — Data Model
 
-Status: **Proposed for Phase 2, awaiting approval** · 31 Oct 2026
+Status: **Approved and implemented, 31 Oct 2026.** Schema: `prisma/schema.prisma`; constraints: `prisma/migrations/20261031103938_init_catalog_and_customers/migration.sql`.
 
 Scope of this phase: User, Address, Category, Product (with options), ProductImage, ProductVariant, Inventory and Review. Carts, orders, payments, sessions, coupons and shipments are added in their own phases and must not be modelled speculatively now.
 
@@ -190,7 +190,15 @@ Available stock is always computed as `stockOnHand - reserved`. Stock changes in
 
 ---
 
-## 5. Open questions for the owner
+## 5. Implementation notes
+
+- The migration adds 14 `CHECK` constraints beyond the proposal's minimum: normalised emails, PIN-code format for Indian addresses, no self-parent categories, positive prices, struck-through price above selling price, non-negative weight, stock/reservation bounds, non-blank alt text and positive image dimensions, tax rate range, rating range. Prisma Migrate reports no drift from them.
+- The one-default-address rule uses Prisma's `partialIndexes` preview feature (`@@unique([userId], where: { isDefault: true })`), so it is part of the schema rather than a hand-written index.
+- `ProductVariantValue` carries `optionId` as well as `optionValueId`, giving the `(variantId, optionId)` uniqueness that guarantees one value per option. Cross-table consistency (the option belongs to the variant's product) is enforced by the seed and, from Phase 7, the admin service.
+- Services expose only `ACTIVE` products and `isActive` categories. Draft and archived products are invisible to the storefront by construction (`data.ts`), and tests assert it.
+- Price sorting is not available yet: Prisma cannot order by a relation's minimum, so Phase 3 will add either a denormalised minimum price on `Product` or a SQL-ordered id query.
+
+## 6. Open questions for the owner
 
 1. **Technique list:** does the enum above cover every way your products are made? It is cheap to extend now and awkward later.
 2. **Tax:** prices will be stored tax-inclusive, with HSN and GST rate per product left empty until confirmed with your accountant. Correct?

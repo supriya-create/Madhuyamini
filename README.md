@@ -16,13 +16,41 @@ npm run dev
 
 Open http://localhost:3000. The internal design-system specimen is at `/design-system` (it returns 404 when `SITE_ENV=production`).
 
+### Database
+
+The app needs PostgreSQL (16 or newer). With Homebrew on macOS:
+
+```bash
+brew install postgresql@18
+```
+
+```bash
+brew services start postgresql@18
+```
+
+```bash
+createdb madhuyamini && createdb madhuyamini_test
+```
+
+Set `DATABASE_URL` and `TEST_DATABASE_URL` in `.env.local` (see `.env.example`), then apply the migrations and load the development fixtures:
+
+```bash
+npm run db:migrate
+```
+
+```bash
+npm run db:seed
+```
+
+The seed is idempotent and refuses to run against production or any non-local host. If PostgreSQL complains that `/tmp/.s.PGSQL.5432` is in use (a stale socket from another install), start it with a private socket directory: `pg_ctl -D /opt/homebrew/var/postgresql@18 -o "-c unix_socket_directories=/tmp/pgsock" start` (and `LC_ALL=en_US.UTF-8` if it reports becoming multithreaded).
+
 ## Quality gates
 
 ```bash
 npm run check
 ```
 
-This runs typecheck, lint, format check, unit tests and end-to-end/accessibility tests. The first end-to-end run needs the Playwright browsers:
+This runs typecheck, lint, format check, unit tests, integration tests (real PostgreSQL, `TEST_DATABASE_URL`) and end-to-end/accessibility tests. The first end-to-end run needs the Playwright browsers:
 
 ```bash
 npx playwright install chromium webkit
@@ -43,5 +71,6 @@ Variables are validated at startup in `src/server/env-schema.ts`.
 
 - [Roadmap and phase status](docs/roadmap.md)
 - [Architecture and decisions](docs/architecture.md)
+- [Data model](docs/data-model.md)
 - [Design system](docs/design-system.md)
 - [Engineering rules](CLAUDE.md)
