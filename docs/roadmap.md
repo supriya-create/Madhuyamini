@@ -1,22 +1,22 @@
 # Madhuyamini — Roadmap
 
-Status: **Phases 1–5 implemented (31 Oct 2026).** Brand inputs (D2) are still outstanding; Phase 5 awaits owner review.
+Status: **Phases 1–5 implemented (31 Oct 2026); Phase 6 proposed.** Brand inputs (D2) are still outstanding; the Phase 6 proposal ([checkout.md](checkout.md)) awaits approval.
 
 Related: [architecture.md](architecture.md) · [design-system.md](design-system.md). Decision IDs (D1–D9) refer to architecture.md §7.
 
-| #   | Phase                                       | Status                               | Decisions needed first  |
-| --- | ------------------------------------------- | ------------------------------------ | ----------------------- |
-| 1   | Project setup and homepage foundation       | **Implemented; open items**          | D2 (D1 decided)         |
-| 2   | Database and backend foundation             | **Implemented; open items**          | D4 (deferred to 11)     |
-| 3   | Product catalog                             | **Implemented; open items**          | D2 (imagery)            |
-| 4   | Authentication and customer accounts        | **Implemented** ([auth.md](auth.md)) | decided (D3, D5, P1–P5) |
-| 5   | Cart and wishlist                           | **Implemented** ([cart.md](cart.md)) | decided (C1–C6)         |
-| 6   | Checkout and payments (Razorpay + COD)      | Not started                          | D6, D7                  |
-| 7   | Admin dashboard                             | Not started                          | none                    |
-| 8   | Advanced e-commerce features                | Not started                          | D7                      |
-| 9   | Brand experience and content                | Not started                          | D2                      |
-| 10  | Testing, security and performance hardening | Not started                          | D8, D9                  |
-| 11  | Production deployment                       | Not started                          | none                    |
+| #   | Phase                                       | Status                                    | Decisions needed first  |
+| --- | ------------------------------------------- | ----------------------------------------- | ----------------------- |
+| 1   | Project setup and homepage foundation       | **Implemented; open items**               | D2 (D1 decided)         |
+| 2   | Database and backend foundation             | **Implemented; open items**               | D4 (deferred to 11)     |
+| 3   | Product catalog                             | **Implemented; open items**               | D2 (imagery)            |
+| 4   | Authentication and customer accounts        | **Implemented** ([auth.md](auth.md))      | decided (D3, D5, P1–P5) |
+| 5   | Cart and wishlist                           | **Implemented** ([cart.md](cart.md))      | decided (C1–C6)         |
+| 6   | Checkout and payments (Razorpay + COD)      | **Proposed** ([checkout.md](checkout.md)) | D6, D7a–c, P6–P12       |
+| 7   | Admin dashboard                             | Not started                               | none                    |
+| 8   | Advanced e-commerce features                | Not started                               | D7                      |
+| 9   | Brand experience and content                | Not started                               | D2                      |
+| 10  | Testing, security and performance hardening | Not started                               | D8, D9                  |
+| 11  | Production deployment                       | Not started                               | none                    |
 
 ### Sequencing notes
 
