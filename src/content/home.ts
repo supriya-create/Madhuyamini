@@ -8,6 +8,16 @@ import { routes } from "@/lib/routes";
  * Madhubani tradition generally and should be reviewed with the brand's artists.
  */
 
+export interface HeroImage {
+  readonly url: string;
+  readonly alt: string;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** Supplied by the owner (D2). While null, development shows a placeholder and production builds fail. */
+export const heroImage: HeroImage | null = null;
+
 export const hero = {
   eyebrow: "Madhubani · Mithila",
   heading: "Madhubani, in every thread and frame",

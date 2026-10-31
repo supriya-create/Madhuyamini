@@ -1,4 +1,4 @@
-import type { Technique } from "@/generated/prisma/enums";
+import type { ConstructionMethod, Technique } from "@/generated/prisma/enums";
 
 import type { PriceRange, StockStatus } from "./rules";
 
@@ -37,7 +37,9 @@ export interface ProductSummary {
   readonly slug: string;
   readonly title: string;
   readonly subtitle: string | null;
-  readonly technique: Technique;
+  /** At least one; the first is the headline technique. */
+  readonly techniques: readonly Technique[];
+  readonly constructionMethods: readonly ConstructionMethod[];
   readonly isOneOfAKind: boolean;
   readonly category: { readonly slug: string; readonly name: string };
   readonly image: CatalogImage | null;
@@ -79,6 +81,15 @@ export interface ProductDetail extends ProductSummary {
   readonly seo: { readonly title: string; readonly description: string | null };
 }
 
+export interface ProductListFilters {
+  readonly q: string | null;
+  readonly techniques: readonly Technique[];
+  readonly minPriceInPaise: number | null;
+  readonly maxPriceInPaise: number | null;
+  readonly inStock: boolean;
+  readonly sort: "relevance" | "newest" | "price-asc" | "price-desc" | "title";
+}
+
 export interface ProductPage {
   readonly items: readonly ProductSummary[];
   readonly page: number;
@@ -86,4 +97,8 @@ export interface ProductPage {
   readonly total: number;
   readonly totalPages: number;
   readonly category: CategoryDetail | null;
+  /** The validated, normalised filters the page was built from (for controls and links). */
+  readonly filters: ProductListFilters;
+  /** Filter choices that would return at least one product in this scope. */
+  readonly availableTechniques: readonly Technique[];
 }

@@ -130,6 +130,20 @@ One row per variant (`variantId` is the primary key).
 
 Available stock is always computed as `stockOnHand - reserved`. Stock changes in later phases use one conditional `UPDATE … WHERE stock_on_hand - reserved >= $n`, never read-then-write. A movement ledger is added with the admin tools (Phase 7).
 
+### InventoryReservation
+
+A time-limited hold on stock while an online payment is pending. Added in Phase 2.5 so checkout (Phase 6) has expiry and release represented from the start.
+
+| Field       | Notes                                                                                     |
+| ----------- | ----------------------------------------------------------------------------------------- |
+| `variantId` | References `Inventory`. **Restrict**: a variant with holds cannot be deleted.             |
+| `quantity`  | `CHECK > 0`                                                                               |
+| `status`    | `ACTIVE` → `RELEASED` (customer abandoned) / `CONSUMED` (order paid) / `EXPIRED` (sweep). |
+| `expiresAt` | Indexed with `status` for the expiry sweep.                                               |
+| `closedAt?` | `CHECK ((status = 'ACTIVE') = (closed_at IS NULL))`: a hold is open exactly while active. |
+
+**Invariant:** `Inventory.reserved` equals the sum of `quantity` over `ACTIVE` holds for that variant. The application changes both inside one transaction; the integration test `reservations.test.ts` demonstrates the expiry sweep keeping them consistent. Phase 6 adds the owning order reference.
+
 ### ProductImage
 
 | Field              | Notes                                                                |
@@ -191,6 +205,9 @@ Available stock is always computed as `stockOnHand - reserved`. Stock changes in
 ---
 
 ## 5. Implementation notes
+
+- **Migration 2 (`techniques_arrays_and_reservations`)** is hand-written: it back-fills the array columns from the old single `technique`, rebuilds the enum without `HANDWOVEN`/`MIXED_MEDIA`, adds `APPLIQUE`, and creates the reservations table. Prisma's generated draft ordered the steps incorrectly, which is why it is not used verbatim.
+- **Migration 3 (`product_search_index`)** adds the full-text expression index. Prisma Migrate reports no drift for expression indexes.
 
 - The migration adds 14 `CHECK` constraints beyond the proposal's minimum: normalised emails, PIN-code format for Indian addresses, no self-parent categories, positive prices, struck-through price above selling price, non-negative weight, stock/reservation bounds, non-blank alt text and positive image dimensions, tax rate range, rating range. Prisma Migrate reports no drift from them.
 - The one-default-address rule uses Prisma's `partialIndexes` preview feature (`@@unique([userId], where: { isDefault: true })`), so it is part of the schema rather than a hand-written index.

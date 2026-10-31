@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   availableStock,
+  escapeLikePattern,
+  findVariantForSelection,
   isPurchasable,
   normaliseEmail,
+  paginationWindow,
   priceRange,
   stockStatus,
   variantTitle,
@@ -88,5 +91,53 @@ describe("normaliseEmail", () => {
     expect(normaliseEmail("  Asha.Devi@Example.COM ")).toBe(
       "asha.devi@example.com",
     );
+  });
+});
+
+describe("escapeLikePattern", () => {
+  it("escapes LIKE metacharacters so user text matches literally", () => {
+    expect(escapeLikePattern("100% silk_blend \\ saree")).toBe(
+      "100\\% silk\\_blend \\\\ saree",
+    );
+    expect(escapeLikePattern("plain")).toBe("plain");
+  });
+});
+
+describe("findVariantForSelection", () => {
+  const variants = [
+    { id: "v1", optionValueIds: ["size-m", "frame-no"] },
+    { id: "v2", optionValueIds: ["size-m", "frame-yes"] },
+    { id: "v3", optionValueIds: ["size-l", "frame-yes"] },
+  ];
+
+  it("matches a complete selection regardless of order", () => {
+    expect(
+      findVariantForSelection(variants, ["frame-yes", "size-m"], 2)?.id,
+    ).toBe("v2");
+  });
+
+  it("returns null while the selection is incomplete or impossible", () => {
+    expect(findVariantForSelection(variants, ["size-m"], 2)).toBeNull();
+    expect(
+      findVariantForSelection(variants, ["size-l", "frame-no"], 2),
+    ).toBeNull();
+  });
+
+  it("matches the single variant of a product without options", () => {
+    expect(
+      findVariantForSelection([{ id: "only", optionValueIds: [] }], [], 0)?.id,
+    ).toBe("only");
+  });
+});
+
+describe("paginationWindow", () => {
+  it("is empty for a single page", () => {
+    expect(paginationWindow(1, 1)).toEqual([]);
+  });
+
+  it("keeps first, last and neighbours with gaps", () => {
+    expect(paginationWindow(5, 10)).toEqual([1, null, 4, 5, 6, null, 10]);
+    expect(paginationWindow(1, 4)).toEqual([1, 2, null, 4]);
+    expect(paginationWindow(3, 3)).toEqual([1, 2, 3]);
   });
 });

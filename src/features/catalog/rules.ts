@@ -65,3 +65,58 @@ export function variantTitle(
 export function normaliseEmail(email: string): string {
   return email.trim().toLowerCase();
 }
+
+/** Escapes `%`, `_` and `\` so user text can be used literally inside a LIKE pattern. */
+export function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
+export interface VariantSelection {
+  readonly id: string;
+  readonly optionValueIds: readonly string[];
+}
+
+/**
+ * Finds the variant whose option values match a complete selection (one value
+ * per option). Returns null while the selection is incomplete or has no match.
+ */
+export function findVariantForSelection<T extends VariantSelection>(
+  variants: readonly T[],
+  selectedValueIds: readonly string[],
+  optionCount: number,
+): T | null {
+  if (selectedValueIds.length !== optionCount) return null;
+  const wanted = new Set(selectedValueIds);
+  return (
+    variants.find(
+      (variant) =>
+        variant.optionValueIds.length === wanted.size &&
+        variant.optionValueIds.every((id) => wanted.has(id)),
+    ) ?? null
+  );
+}
+
+/** Page numbers to show around the current page: always first and last, with gaps as null. */
+export function paginationWindow(
+  page: number,
+  totalPages: number,
+  radius = 1,
+): (number | null)[] {
+  if (totalPages <= 1) return [];
+  const pages = new Set<number>([1, totalPages]);
+  for (
+    let candidate = page - radius;
+    candidate <= page + radius;
+    candidate += 1
+  ) {
+    if (candidate >= 1 && candidate <= totalPages) pages.add(candidate);
+  }
+  const ordered = [...pages].sort((a, b) => a - b);
+  const result: (number | null)[] = [];
+  for (const [index, value] of ordered.entries()) {
+    const previous = ordered[index - 1];
+    if (previous !== undefined && value - previous > 1) result.push(null);
+    result.push(value);
+  }
+  return result;
+}

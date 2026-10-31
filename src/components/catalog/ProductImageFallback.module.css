@@ -1,0 +1,21 @@
+.fallback {
+  display: grid;
+  place-content: center;
+  aspect-ratio: 4 / 5;
+  padding: var(--space-4);
+  border: 1px solid var(--rule);
+  background-color: var(--color-cream);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.fallback[data-aspect="square"] {
+  aspect-ratio: 1;
+}
+
+.label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+}

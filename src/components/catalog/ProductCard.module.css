@@ -1,0 +1,85 @@
+.card {
+  position: relative;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.media {
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  background-color: var(--color-cream);
+}
+
+.image {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 5;
+  object-fit: cover;
+  transition: transform var(--duration-slow) var(--ease-out);
+}
+
+.card:hover .image {
+  transform: scale(1.02);
+}
+
+.body {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.category {
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.title {
+  font-size: var(--text-xl);
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+/* The title link covers the whole card without wrapping block content in an anchor. */
+.link {
+  text-decoration: none;
+  color: var(--text);
+}
+
+.link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.card:focus-within {
+  outline: 2px solid var(--focus);
+  outline-offset: 4px;
+}
+
+.link:focus-visible {
+  outline: none;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-3);
+  margin-block-start: var(--space-1);
+}
+
+.badge,
+.soldOut {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.badge {
+  color: var(--color-gold-text);
+}

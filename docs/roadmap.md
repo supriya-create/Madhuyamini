@@ -1,6 +1,6 @@
 # Madhuyamini — Roadmap
 
-Status: **Phases 1–2 implemented (31 Oct 2026).** Phase 1 awaits owner review and brand inputs; Phase 2 awaits owner review.
+Status: **Phases 1–3 implemented (31 Oct 2026).** Brand inputs (D2) are still outstanding; Phase 3 awaits owner review.
 
 Related: [architecture.md](architecture.md) · [design-system.md](design-system.md). Decision IDs (D1–D9) refer to architecture.md §7.
 
@@ -8,7 +8,7 @@ Related: [architecture.md](architecture.md) · [design-system.md](design-system.
 | --- | ------------------------------------------- | --------------------------- | ---------------------- |
 | 1   | Project setup and homepage foundation       | **Implemented; open items** | D2 (D1 decided)        |
 | 2   | Database and backend foundation             | **Implemented; open items** | D4 (deferred to 11)    |
-| 3   | Product catalog                             | Not started                 | none                   |
+| 3   | Product catalog                             | **Implemented; open items** | D2 (imagery)           |
 | 4   | Authentication and customer accounts        | Not started                 | D3, D5                 |
 | 5   | Cart and wishlist                           | Not started                 | none                   |
 | 6   | Checkout and payments (Razorpay + COD)      | Not started                 | D6, D7                 |
@@ -205,6 +205,72 @@ A production-ready PostgreSQL schema for customers and the catalog, with databas
 - **Hosted database (D4)** is still undecided. Local development uses PostgreSQL 18; no 18-only features are used, and CI runs PostgreSQL 17.
 - **Local PostgreSQL** was started for the session only (`pg_ctl`), not installed as a service; see the README for the commands.
 - **Dev-tool advisories:** `npm audit` reports 16 moderate findings, all inside the ESLint 9 toolchain (`minimatch`, `eslint-utils`). Production dependencies have none; the CI audit gate covers production only.
+
+---
+
+## Phase 3 — Dynamic product catalogue
+
+Started 31 Oct 2026 after the owner's four pre-checks (CI #3 green; reservation expiry/release modelled; multiple techniques and construction methods per product; migrations rebuild from scratch and the seed stays guarded).
+
+### Objective
+
+Database-backed listing, detail and search pages with filters, sorting, pagination, variants, honest image handling and every state (loading, empty, error, not-found), on the Phase 1 design system.
+
+### Checklist
+
+**3.1 Schema additions (Phase 2.5)**
+
+- [x] `InventoryReservation` with status, quantity, `expiresAt`/`closedAt`, sweep indexes and CHECKs; `Inventory.reserved` invariant documented and tested
+- [x] `Product.techniques[]` (non-empty, GIN) and `Product.constructionMethods[]`; hand-written data migration retiring `HANDWOVEN`/`MIXED_MEDIA`, adding `APPLIQUE`
+- [x] Full-text GIN expression index (title A, subtitle B, description C); planner verified to use it
+
+**3.2 Queries and services**
+
+- [x] One parameterised SQL query for listing/search: category scope (incl. children), technique overlap, price range on active variants, in-stock, `websearch_to_tsquery` + title prefix match, five sort orders, window-function total
+- [x] Facets: techniques available in scope
+- [x] Related products: same category, then sibling categories, never self or hidden
+- [x] Strict Zod query schema (rupees → paise, comma/repeated techniques, flags, limits); unknown URL keys ignored, invalid values redirect to the clean URL
+- [x] React `cache()` memoisation of category tree, category and product lookups
+
+**3.3 Pages and components**
+
+- [x] `/collections` index, `/collections/[slug]` (breadcrumbs, child-category chips, filters, sort, pagination, empty states), `/products/[slug]` (gallery or honest fallback, variant selector with live price/availability/SKU, how-it-is-made facts, related), `/search`
+- [x] Loading skeletons, 404 via `notFound()`, storefront error boundary, empty states with a way out
+- [x] Header navigation sourced from the Category table; search in header and drawer
+- [x] Homepage: "Shop by collection" and admin-curated "Featured pieces" (hidden when empty; never labelled best-selling)
+- [x] Cloudinary `next/image` loader (unit-tested); hero image slot with a build-time guard
+- [ ] Product photography (D2): every product currently shows "Photograph coming soon"
+- [ ] Add-to-cart (Phase 5), size guide and delivery information (Phase 6/8, needs D7)
+
+**3.4 Tests**
+
+- [x] Unit: rules (LIKE escaping, variant matching, pagination window), schemas, URL builder, image loader, labels
+- [x] Integration: search ranking and partial matches, each filter, price sorts, facets, related products, reservations
+- [x] E2E: collections index, parent/child listing, breadcrumbs, filters as a GET form, empty states, price sort, pagination with filters, junk params, header search (desktop and drawer), product page facts/related, variant selection (one and two axes), one-of-a-kind, 404s for draft/archived/unknown, DB-driven nav, homepage sections, axe on five catalog pages
+- [x] CI seeds the development database before building, so the e2e server has fixtures
+
+### Results (31 Oct 2026)
+
+| Gate                          | Result                                                                                                                                                                                                                          |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run typecheck`           | Clean                                                                                                                                                                                                                           |
+| `npm run lint`                | 0 problems                                                                                                                                                                                                                      |
+| `npm run format:check`        | Clean                                                                                                                                                                                                                           |
+| `npm test` (unit)             | 86 passed                                                                                                                                                                                                                       |
+| `npm run test:integration`    | 49 passed (PostgreSQL 18 locally)                                                                                                                                                                                               |
+| `npm run build`               | Succeeds; `/collections/[slug]`, `/products/[slug]`, `/search` and `/` are dynamic, the rest static                                                                                                                             |
+| `npm run test:e2e`            | 167 passed, 17 skipped by design, across Chromium and WebKit at desktop and phone sizes, including axe on five catalogue pages                                                                                                  |
+| HTTP statuses                 | Unknown categories and draft/archived/unknown products return 404; junk query values redirect client-side to the clean URL (the shell has already streamed, so it is 200)                                                       |
+| Pre-checks requested by owner | CI #3 green; reservation expiry/release modelled and tested; multiple techniques and construction methods per product; scratch database rebuilt from migrations with zero drift; seed guard refuses production and remote hosts |
+
+Fixes made because tests caught them: pagination links dropped the page size; `pageSize` was not accepted from URLs; an in-stock one-of-a-kind piece read "In stock"; the size radios were unclickable for automation (now the input overlays its label); the search page listed everything when no term was given; unknown slugs returned 200 because `notFound()` ran inside the streamed boundary (now resolved in a segment layout).
+
+### Known issues and follow-ups
+
+- **Hidden browser panes don't hydrate streamed boundaries.** While verifying, the product page appeared non-interactive in the Claude desktop browser pane; the cause was the pane running as a background page (animation frames paused), not the code. Visible tabs hydrate in ~100 ms and Playwright passes.
+- **Price sort uses a correlated subquery** over active variants. Fine at catalogue scale; revisit with a denormalised minimum price if listings grow large (Phase 10).
+- **Catalog pages are dynamic** (D10): no caching yet; measured and tagged caching comes with admin edits (Phase 7) and hardening (Phase 10).
+- **No product images exist** (D2), so the gallery's multi-image behaviour is covered by unit tests of the loader and by component structure only, not by e2e.
 
 ---
 

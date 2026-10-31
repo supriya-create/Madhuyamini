@@ -82,6 +82,11 @@
   color: var(--color-umber);
 }
 
+.search {
+  padding-block: var(--space-4);
+  border-block-end: 1px solid var(--rule);
+}
+
 .list,
 .subList {
   padding: 0;

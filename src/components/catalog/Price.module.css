@@ -1,0 +1,20 @@
+.price {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.from {
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+.compareAt {
+  margin-inline-start: var(--space-1);
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.unavailable {
+  color: var(--text-muted);
+}

@@ -3,6 +3,7 @@
 import { ChevronDown, Menu, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef } from "react";
+import type { ReactNode } from "react";
 
 import { Icon } from "@/components/ui/Icon";
 import type { NavCategory, NavLink } from "@/content/navigation";
@@ -12,6 +13,8 @@ import styles from "./MobileNav.module.css";
 type MobileNavProps = {
   categories: readonly NavCategory[];
   extras: readonly NavLink[];
+  /** Server-rendered search form placed at the top of the drawer. */
+  searchSlot?: ReactNode;
 };
 
 const DIALOG_ID = "mobile-menu";
@@ -22,7 +25,7 @@ const TITLE_ID = "mobile-menu-title";
  * the browser provides focus containment, Escape to close, an inert
  * background and focus return to the trigger.
  */
-export function MobileNav({ categories, extras }: MobileNavProps) {
+export function MobileNav({ categories, extras, searchSlot }: MobileNavProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
@@ -72,6 +75,8 @@ export function MobileNav({ categories, extras }: MobileNavProps) {
             <span className="visually-hidden">Close menu</span>
           </button>
         </div>
+
+        {searchSlot ? <div className={styles.search}>{searchSlot}</div> : null}
 
         <nav aria-label="Main">
           <ul className={styles.list}>

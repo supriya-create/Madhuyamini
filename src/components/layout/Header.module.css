@@ -21,7 +21,22 @@
 
 .end {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.desktopSearch {
+  display: none;
+}
+
+.iconLink {
+  display: inline-grid;
+  place-items: center;
+  width: var(--tap-target);
+  height: var(--tap-target);
+  margin-inline-end: calc(var(--space-3) * -1);
+  color: var(--color-ink);
 }
 
 .wordmark {
@@ -37,6 +52,14 @@
 @media (min-width: 64em) {
   .bar {
     height: 4.25rem;
+  }
+
+  .desktopSearch {
+    display: block;
+  }
+
+  .iconLink {
+    display: none;
   }
 
   .wordmark {

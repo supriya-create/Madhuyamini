@@ -1,0 +1,42 @@
+.gallery {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.stage {
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  background-color: var(--color-cream);
+}
+
+.image {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 5;
+  object-fit: cover;
+}
+
+.thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.thumb {
+  width: 4.5rem;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  background-color: var(--color-cream);
+}
+
+.thumb img {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 5;
+  object-fit: cover;
+}
+
+.thumb[aria-pressed="true"] {
+  border-color: var(--color-ink);
+  outline: 1px solid var(--color-ink);
+}

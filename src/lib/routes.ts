@@ -9,6 +9,8 @@ export const routes = {
   heritage: "/#heritage",
   collections: "/collections",
   collection: (slug: string) => `/collections/${slug}`,
+  product: (slug: string) => `/products/${slug}`,
+  search: "/search",
   customArtwork: "/custom-artwork",
   contact: "/contact",
   careGuide: "/care-guide",

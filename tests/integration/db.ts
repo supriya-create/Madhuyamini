@@ -30,7 +30,7 @@ export async function createProduct(categoryId: string, slug = "test-product") {
       slug,
       title: slug,
       description: "Integration test product",
-      technique: "HAND_PAINTED",
+      techniques: ["HAND_PAINTED"],
       categoryId,
       status: "ACTIVE",
     },

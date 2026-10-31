@@ -42,7 +42,7 @@ npm run db:migrate
 npm run db:seed
 ```
 
-The seed is idempotent and refuses to run against production or any non-local host. If PostgreSQL complains that `/tmp/.s.PGSQL.5432` is in use (a stale socket from another install), start it with a private socket directory: `pg_ctl -D /opt/homebrew/var/postgresql@18 -o "-c unix_socket_directories=/tmp/pgsock" start` (and `LC_ALL=en_US.UTF-8` if it reports becoming multithreaded).
+The seed is idempotent and refuses to run against production or any non-local host. The storefront's collections, product pages, search and header navigation all read from this database, and the e2e suite expects the seed fixtures to be present. If PostgreSQL complains that `/tmp/.s.PGSQL.5432` is in use (a stale socket from another install), start it with a private socket directory: `pg_ctl -D /opt/homebrew/var/postgresql@18 -o "-c unix_socket_directories=/tmp/pgsock" start` (and `LC_ALL=en_US.UTF-8` if it reports becoming multithreaded).
 
 ## Quality gates
 

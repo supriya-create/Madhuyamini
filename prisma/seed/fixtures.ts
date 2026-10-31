@@ -1,5 +1,8 @@
-import type { Technique } from "../../src/generated/prisma/enums";
-import type { ProductStatus } from "../../src/generated/prisma/enums";
+import type {
+  ConstructionMethod,
+  ProductStatus,
+  Technique,
+} from "../../src/generated/prisma/enums";
 
 /**
  * DEVELOPMENT FIXTURES — never real merchandise.
@@ -26,7 +29,9 @@ export interface ProductFixture {
   readonly title: string;
   readonly subtitle: string;
   readonly description: string;
-  readonly technique: Technique;
+  /** At least one; the first is the headline technique. */
+  readonly techniques: readonly Technique[];
+  readonly constructionMethods?: readonly ConstructionMethod[];
   readonly material?: string;
   readonly careInstructions?: string;
   readonly categorySlug: string;
@@ -51,7 +56,8 @@ export const productFixtures: readonly ProductFixture[] = [
     title: "Fish motif tussar silk saree",
     subtitle: "Development sample",
     description: `${SAMPLE_NOTE} Hand-painted paired fish along the border and pallu, in sindoor red and ochre on natural tussar.`,
-    technique: "HAND_PAINTED",
+    techniques: ["HAND_PAINTED"],
+    constructionMethods: ["HANDWOVEN"],
     material: "Tussar silk",
     careInstructions:
       "Dry clean only. Store folded in muslin away from direct sunlight.",
@@ -72,7 +78,8 @@ export const productFixtures: readonly ProductFixture[] = [
     title: "Peacock kurta set",
     subtitle: "Development sample",
     description: `${SAMPLE_NOTE} Hand-block-printed peacock repeat on a cotton kurta with a plain palazzo.`,
-    technique: "HAND_BLOCK_PRINTED",
+    techniques: ["HAND_BLOCK_PRINTED"],
+    constructionMethods: ["MACHINE_STITCHED"],
     material: "Cotton",
     careInstructions: "Gentle machine wash cold, inside out. Do not bleach.",
     categorySlug: "kurta-sets",
@@ -92,7 +99,8 @@ export const productFixtures: readonly ProductFixture[] = [
     title: "Lotus dupatta",
     subtitle: "Development sample",
     description: `${SAMPLE_NOTE} A single lotus medallion painted at each end of a cotton-silk dupatta.`,
-    technique: "HAND_PAINTED",
+    techniques: ["HAND_PAINTED"],
+    constructionMethods: ["HANDWOVEN"],
     material: "Cotton silk",
     careInstructions: "Dry clean only.",
     categorySlug: "dupattas",
@@ -112,7 +120,8 @@ export const productFixtures: readonly ProductFixture[] = [
     title: "Tree of life canvas print",
     subtitle: "Development sample",
     description: `${SAMPLE_NOTE} Archival print of a tree-of-life composition, available in two sizes, framed or unframed.`,
-    technique: "DIGITAL_PRINT",
+    techniques: ["DIGITAL_PRINT"],
+    constructionMethods: ["STRETCHED_CANVAS", "FRAMED"],
     material: "Cotton canvas, pine frame",
     careInstructions: "Dust with a dry cloth. Keep out of direct sunlight.",
     categorySlug: "canvas-prints",
@@ -154,7 +163,8 @@ export const productFixtures: readonly ProductFixture[] = [
     title: "Kohbar, original painting",
     subtitle: "Development sample",
     description: `${SAMPLE_NOTE} A one-of-a-kind kohbar painting on handmade paper, framed. Sold once.`,
-    technique: "HAND_PAINTED",
+    techniques: ["HAND_PAINTED"],
+    constructionMethods: ["HANDMADE_PAPER", "FRAMED"],
     material: "Natural pigments on handmade paper",
     careInstructions: "Keep away from moisture and direct sunlight.",
     categorySlug: "framed-paintings",
@@ -175,7 +185,8 @@ export const productFixtures: readonly ProductFixture[] = [
     title: "Sun and moon cushion cover",
     subtitle: "Development sample",
     description: `${SAMPLE_NOTE} Screen-printed sun and moon faces on heavy cotton, with a concealed zip.`,
-    technique: "SCREEN_PRINTED",
+    techniques: ["SCREEN_PRINTED"],
+    constructionMethods: ["MACHINE_STITCHED"],
     material: "Cotton",
     careInstructions: "Machine wash cold. Iron on reverse.",
     categorySlug: "cushion-covers",
@@ -201,7 +212,8 @@ export const productFixtures: readonly ProductFixture[] = [
     title: "Fish tote bag",
     subtitle: "Development sample",
     description: `${SAMPLE_NOTE} Hand-painted paired fish on a natural canvas tote.`,
-    technique: "HAND_PAINTED",
+    techniques: ["HAND_PAINTED"],
+    constructionMethods: ["MACHINE_STITCHED"],
     material: "Canvas",
     categorySlug: "tote-bags",
     status: "ACTIVE",
@@ -215,7 +227,8 @@ export const productFixtures: readonly ProductFixture[] = [
     title: "Draft wall hanging",
     subtitle: "Development sample",
     description: `${SAMPLE_NOTE} Still a draft: must never appear on the storefront.`,
-    technique: "MIXED_MEDIA",
+    techniques: ["HAND_PAINTED", "EMBROIDERED", "APPLIQUE"],
+    constructionMethods: ["HAND_STITCHED"],
     categorySlug: "wall-hangings",
     status: "DRAFT",
     variants: [
@@ -227,7 +240,8 @@ export const productFixtures: readonly ProductFixture[] = [
     title: "Archived notebook",
     subtitle: "Development sample",
     description: `${SAMPLE_NOTE} Archived: must never appear on the storefront.`,
-    technique: "DIGITAL_PRINT",
+    techniques: ["DIGITAL_PRINT"],
+    constructionMethods: ["MACHINE_STITCHED"],
     categorySlug: "notebooks",
     status: "ARCHIVED",
     variants: [{ sku: "MY-SAMPLE-0009", priceInPaise: 49_900, stockOnHand: 0 }],

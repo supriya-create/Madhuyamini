@@ -55,8 +55,8 @@ jobs:
       - name: Create the integration-test database
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE madhuyamini_test"
 
-      - name: Apply migrations to the development database
-        run: npm run db:deploy
+      - name: Apply migrations and seed the development database (used by the e2e server)
+        run: npm run db:deploy && npm run db:seed
 
       - name: Integration tests (real PostgreSQL)
         run: npm run test:integration

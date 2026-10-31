@@ -31,18 +31,40 @@ enum ProductStatus {
   @@map("product_status")
 }
 
-/// How a piece is made. Required on every product so a print is never
-/// presented as a painting.
+/// Decorative techniques applied to a piece. A product lists every technique
+/// used (at least one), so a print is never presented as a painting.
 enum Technique {
   HAND_PAINTED
   HAND_BLOCK_PRINTED
   SCREEN_PRINTED
   DIGITAL_PRINT
   EMBROIDERED
-  HANDWOVEN
-  MIXED_MEDIA
+  APPLIQUE
 
   @@map("technique")
+}
+
+/// How the object itself is made, independent of its decoration.
+enum ConstructionMethod {
+  HANDWOVEN
+  MILL_WOVEN
+  HAND_STITCHED
+  MACHINE_STITCHED
+  HANDMADE_PAPER
+  STRETCHED_CANVAS
+  FRAMED
+
+  @@map("construction_method")
+}
+
+/// Lifecycle of a stock hold. Only ACTIVE holds count towards Inventory.reserved.
+enum ReservationStatus {
+  ACTIVE
+  RELEASED
+  CONSUMED
+  EXPIRED
+
+  @@map("reservation_status")
 }
 
 enum ReviewStatus {
@@ -127,27 +149,29 @@ model Category {
 }
 
 model Product {
-  id               String        @id @default(uuid(7)) @db.Uuid
-  slug             String        @unique
-  title            String
-  subtitle         String?
-  description      String
-  technique        Technique
-  material         String?
-  careInstructions String?       @map("care_instructions")
-  categoryId       String        @map("category_id") @db.Uuid
-  status           ProductStatus @default(DRAFT)
-  publishedAt      DateTime?     @map("published_at")
-  isFeatured       Boolean       @default(false) @map("is_featured")
+  id                  String               @id @default(uuid(7)) @db.Uuid
+  slug                String               @unique
+  title               String
+  subtitle            String?
+  description         String
+  /// Ordered; the first entry is the headline technique. Never empty (CHECK).
+  techniques          Technique[]          @default([])
+  constructionMethods ConstructionMethod[] @default([]) @map("construction_methods")
+  material            String?
+  careInstructions    String?              @map("care_instructions")
+  categoryId          String               @map("category_id") @db.Uuid
+  status              ProductStatus        @default(DRAFT)
+  publishedAt         DateTime?            @map("published_at")
+  isFeatured          Boolean              @default(false) @map("is_featured")
   /// A single original: its one variant carries stock 1.
-  isOneOfAKind     Boolean       @default(false) @map("is_one_of_a_kind")
-  hsnCode          String?       @map("hsn_code")
+  isOneOfAKind        Boolean              @default(false) @map("is_one_of_a_kind")
+  hsnCode             String?              @map("hsn_code")
   /// GST rate in basis points (500 = 5 %). Applied in Phase 6 once confirmed.
-  taxRateBp        Int?          @map("tax_rate_bp")
-  metaTitle        String?       @map("meta_title")
-  metaDescription  String?       @map("meta_description")
-  createdAt        DateTime      @default(now()) @map("created_at")
-  updatedAt        DateTime      @updatedAt @map("updated_at")
+  taxRateBp           Int?                 @map("tax_rate_bp")
+  metaTitle           String?              @map("meta_title")
+  metaDescription     String?              @map("meta_description")
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
 
   category Category         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   images   ProductImage[]
@@ -158,6 +182,7 @@ model Product {
   @@index([categoryId, status])
   @@index([status, isFeatured])
   @@index([status, publishedAt])
+  @@index([techniques], type: Gin)
   @@map("products")
 }
 
@@ -256,9 +281,33 @@ model Inventory {
   lowStockThreshold Int      @default(2) @map("low_stock_threshold")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
-  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  variant      ProductVariant         @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  reservations InventoryReservation[]
 
   @@map("inventory")
+}
+
+/// A time-limited hold on stock while an online payment is pending (Phase 6).
+/// Invariant: Inventory.reserved equals the sum of ACTIVE holds for that
+/// variant; holds are created, consumed and released inside one transaction
+/// with the counter. A scheduled sweep expires holds past `expiresAt`.
+/// Phase 6 adds the owning order reference.
+model InventoryReservation {
+  id        String            @id @default(uuid(7)) @db.Uuid
+  variantId String            @map("variant_id") @db.Uuid
+  quantity  Int
+  status    ReservationStatus @default(ACTIVE)
+  expiresAt DateTime          @map("expires_at")
+  /// When the hold left ACTIVE (released, consumed or expired).
+  closedAt  DateTime?         @map("closed_at")
+  createdAt DateTime          @default(now()) @map("created_at")
+  updatedAt DateTime          @updatedAt @map("updated_at")
+
+  inventory Inventory @relation(fields: [variantId], references: [variantId], onDelete: Restrict)
+
+  @@index([status, expiresAt])
+  @@index([variantId, status])
+  @@map("inventory_reservations")
 }
 
 // ---------------------------------------------------------------------------

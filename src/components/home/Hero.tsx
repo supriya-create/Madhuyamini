@@ -1,11 +1,22 @@
+import Image from "next/image";
+
 import { FramedPanel } from "@/components/motifs/FramedPanel";
 import { ButtonLink } from "@/components/ui/Button";
 import { Container } from "@/components/ui/Container";
 import { Eyebrow } from "@/components/ui/Eyebrow";
 import { ImagePending } from "@/components/ui/ImagePending";
-import { hero } from "@/content/home";
+import { hero, heroImage } from "@/content/home";
+import { isProduction } from "@/server/env";
 
 import styles from "./Hero.module.css";
+
+// Evaluated when the module loads during `next build`, so a production build
+// fails before deployment rather than serving a placeholder (decision D2).
+if (isProduction && heroImage === null) {
+  throw new Error(
+    "Hero image is missing: set heroImage in src/content/home.ts before a production build.",
+  );
+}
 
 export function Hero() {
   return (
@@ -27,7 +38,21 @@ export function Hero() {
           </div>
         </div>
         <FramedPanel className={styles.media}>
-          <ImagePending description={hero.imageDescription} aspect="portrait" />
+          {heroImage ? (
+            <Image
+              src={heroImage.url}
+              alt={heroImage.alt}
+              width={heroImage.width}
+              height={heroImage.height}
+              sizes="(min-width: 64em) 40vw, (min-width: 48em) 50vw, 100vw"
+              priority
+            />
+          ) : (
+            <ImagePending
+              description={hero.imageDescription}
+              aspect="portrait"
+            />
+          )}
         </FramedPanel>
       </Container>
     </section>

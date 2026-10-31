@@ -1,0 +1,17 @@
+.empty {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-4);
+  max-width: 36rem;
+  margin-inline: auto;
+  padding-block: var(--space-8);
+  text-align: center;
+}
+
+.heading {
+  font-size: var(--text-2xl);
+}
+
+.body {
+  color: var(--text-secondary);
+}

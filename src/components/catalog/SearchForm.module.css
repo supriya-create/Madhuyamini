@@ -1,0 +1,62 @@
+.form {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.label {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.field {
+  display: flex;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-1);
+  background-color: var(--color-ivory);
+}
+
+.field:focus-within {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--tap-target);
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  background: transparent;
+  color: var(--text);
+}
+
+.input:focus-visible {
+  outline: none;
+}
+
+.button {
+  display: inline-grid;
+  place-items: center;
+  width: var(--tap-target);
+  color: var(--text-secondary);
+}
+
+.button:hover {
+  color: var(--text);
+}
+
+.form[data-variant="compact"] {
+  width: min(18rem, 100%);
+}
+
+.form[data-variant="compact"] .input {
+  font-size: var(--text-sm);
+}
+
+.form[data-variant="prominent"] .field {
+  max-width: 40rem;
+}
+
+.form[data-variant="prominent"] .input {
+  font-size: var(--text-lg);
+}

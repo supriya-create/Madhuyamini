@@ -1,0 +1,27 @@
+.availability {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.marker {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-round);
+  background-color: var(--color-leaf);
+}
+
+.availability[data-status="low_stock"] .marker {
+  background-color: var(--color-warning);
+}
+
+.availability[data-status="out_of_stock"] {
+  color: var(--text-muted);
+}
+
+.availability[data-status="out_of_stock"] .marker {
+  background-color: var(--color-border-strong);
+}

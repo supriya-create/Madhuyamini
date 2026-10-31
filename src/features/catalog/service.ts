@@ -1,5 +1,7 @@
 import "server-only";
 
+import { cache } from "react";
+
 import { parseOrThrow } from "@/lib/validation";
 import { NotFoundError } from "@/server/errors";
 
@@ -14,6 +16,7 @@ import {
 import {
   featuredLimitSchema,
   productListQuerySchema,
+  relatedLimitSchema,
   slugSchema,
 } from "./schemas";
 import type {
@@ -52,12 +55,20 @@ export async function listProducts(input: unknown): Promise<ProductPage> {
     categoryIds = [category.id, ...category.children.map((child) => child.id)];
   }
 
-  const { items, total } = await data.findProductsPage({
-    categoryIds,
-    sort: query.sort,
-    skip: (query.page - 1) * query.pageSize,
-    take: query.pageSize,
-  });
+  const [{ items, total }, availableTechniques] = await Promise.all([
+    data.findProductsPage({
+      categoryIds,
+      q: query.q,
+      techniques: query.techniques,
+      minPriceInPaise: query.minPriceInPaise,
+      maxPriceInPaise: query.maxPriceInPaise,
+      inStock: query.inStock,
+      sort: query.sort,
+      skip: (query.page - 1) * query.pageSize,
+      take: query.pageSize,
+    }),
+    data.findAvailableTechniques(categoryIds),
+  ]);
 
   return {
     items: items.map(toProductSummary),
@@ -66,14 +77,50 @@ export async function listProducts(input: unknown): Promise<ProductPage> {
     total,
     totalPages: Math.ceil(total / query.pageSize),
     category,
+    filters: {
+      q: query.q ?? null,
+      techniques: query.techniques,
+      minPriceInPaise: query.minPriceInPaise ?? null,
+      maxPriceInPaise: query.maxPriceInPaise ?? null,
+      inStock: query.inStock,
+      sort: query.sort,
+    },
+    availableTechniques: [...availableTechniques].sort(),
   };
 }
 
-export async function getProductBySlug(input: unknown): Promise<ProductDetail> {
-  const slug = parseOrThrow(slugSchema, input);
-  const product = await data.findActiveProductBySlug(slug);
-  if (!product) throw new NotFoundError("Product");
-  return toProductDetail(product);
+export const getProductBySlug = cache(
+  async (input: unknown): Promise<ProductDetail> => {
+    const slug = parseOrThrow(slugSchema, input);
+    const product = await data.findActiveProductBySlug(slug);
+    if (!product) throw new NotFoundError("Product");
+    return toProductDetail(product);
+  },
+);
+
+/** Other active products from the same category, then its siblings. */
+export async function getRelatedProducts(
+  product: Pick<ProductDetail, "id" | "category">,
+  limit = 4,
+): Promise<ProductSummary[]> {
+  const take = parseOrThrow(relatedLimitSchema, limit);
+  const category = await data.findCategoryBySlug(product.category.slug);
+  if (!category) return [];
+
+  const sameCategory = await data.findRelatedProducts({
+    productId: product.id,
+    categoryIds: [category.id],
+    take,
+  });
+  if (sameCategory.length >= take) return sameCategory.map(toProductSummary);
+
+  const family = await data.findCategoryFamily(category.id);
+  const wider = await data.findRelatedProducts({
+    productId: product.id,
+    categoryIds: family,
+    take,
+  });
+  return wider.map(toProductSummary);
 }
 
 export async function getFeaturedProducts(
@@ -92,7 +139,8 @@ function toProductSummary(row: ProductSummaryRow): ProductSummary {
     slug: row.slug,
     title: row.title,
     subtitle: row.subtitle,
-    technique: row.technique,
+    techniques: row.techniques,
+    constructionMethods: row.constructionMethods,
     isOneOfAKind: row.isOneOfAKind,
     category: row.category,
     image: row.images[0] ?? null,

@@ -5,6 +5,7 @@ import {
   getCategoryTree,
   getFeaturedProducts,
   getProductBySlug,
+  getRelatedProducts,
   listProducts,
 } from "@/features/catalog/service";
 import { db } from "@/server/db";
@@ -146,7 +147,8 @@ describe("listProducts", () => {
     expect(canvas?.price).toEqual({ fromInPaise: 249_900, toInPaise: 549_900 });
     expect(canvas?.inStock).toBe(true);
     expect(canvas?.image).toBeNull();
-    expect(canvas?.technique).toBe("DIGITAL_PRINT");
+    expect(canvas?.techniques).toEqual(["DIGITAL_PRINT"]);
+    expect(canvas?.constructionMethods).toEqual(["STRETCHED_CANVAS", "FRAMED"]);
   });
 
   it("rejects unknown categories and invalid queries", async () => {
@@ -159,6 +161,161 @@ describe("listProducts", () => {
     await expect(listProducts({ sort: "cheapest" })).rejects.toBeInstanceOf(
       ValidationError,
     );
+  });
+});
+
+describe("listProducts search and filters", () => {
+  const slugs = async (input: Record<string, unknown>) =>
+    (await listProducts(input)).items.map((item) => item.slug);
+
+  it("finds products by words in the title, subtitle or description", async () => {
+    expect(await slugs({ q: "saree" })).toEqual([
+      "sample-fish-motif-tussar-saree",
+    ]);
+    expect(await slugs({ q: "peacock" })).toEqual(["sample-peacock-kurta-set"]);
+    expect(await slugs({ q: "zip" })).toEqual([
+      "sample-sun-and-moon-cushion-cover",
+    ]);
+  });
+
+  it("matches partial words in titles", async () => {
+    expect(await slugs({ q: "tuss" })).toEqual([
+      "sample-fish-motif-tussar-saree",
+    ]);
+  });
+
+  it("ranks title matches above description matches", async () => {
+    // "fish" is in the saree and tote titles, and only in the kohbar description via "kohbar"? No:
+    // every sample description mentions "sample", so title hits must come first.
+    const results = await slugs({ q: "fish" });
+    expect(results.slice(0, 2).sort()).toEqual([
+      "sample-fish-motif-tussar-saree",
+      "sample-fish-tote-bag",
+    ]);
+  });
+
+  it("never surfaces draft or archived products through search", async () => {
+    // "never appear" occurs only in the draft and archived fixtures' descriptions.
+    expect(await slugs({ q: "never appear" })).toEqual([]);
+    expect(await slugs({ q: "draft" })).toEqual([]);
+  });
+
+  it("treats LIKE metacharacters literally", async () => {
+    expect(await slugs({ q: "%" })).toEqual([]);
+    expect(await slugs({ q: "_" })).toEqual([]);
+  });
+
+  it("filters by technique (any of the selected)", async () => {
+    const handPainted = await slugs({ technique: "HAND_PAINTED" });
+    expect(handPainted.sort()).toEqual([
+      "sample-fish-motif-tussar-saree",
+      "sample-fish-tote-bag",
+      "sample-kohbar-original",
+      "sample-lotus-dupatta",
+    ]);
+    expect(
+      (await slugs({ technique: "SCREEN_PRINTED,DIGITAL_PRINT" })).sort(),
+    ).toEqual([
+      "sample-sun-and-moon-cushion-cover",
+      "sample-tree-of-life-canvas-print",
+    ]);
+    expect(await slugs({ technique: "APPLIQUE" })).toEqual([]);
+  });
+
+  it("filters by price using any active variant", async () => {
+    expect((await slugs({ minPrice: 3000, maxPrice: 4000 })).sort()).toEqual([
+      "sample-peacock-kurta-set",
+      "sample-tree-of-life-canvas-print",
+    ]);
+    expect(await slugs({ minPrice: 20000 })).toEqual([
+      "sample-kohbar-original",
+    ]);
+    expect(await slugs({ maxPrice: 10 })).toEqual([]);
+  });
+
+  it("filters to products with something available to buy", async () => {
+    const all = await listProducts({});
+    const inStock = await listProducts({ inStock: "1" });
+    expect(inStock.total).toBe(all.total);
+
+    const sarees = await getProductBySlug("sample-fish-motif-tussar-saree");
+    const variantId = sarees.variants[0]?.id;
+    if (!variantId) throw new Error("expected a variant");
+    await testDb.inventory.update({
+      where: { variantId },
+      data: { stockOnHand: 0 },
+    });
+    try {
+      expect(await slugs({ inStock: "1", category: "sarees" })).toEqual([]);
+      expect(await slugs({ category: "sarees" })).toEqual([
+        "sample-fish-motif-tussar-saree",
+      ]);
+    } finally {
+      await testDb.inventory.update({
+        where: { variantId },
+        data: { stockOnHand: 3 },
+      });
+    }
+  });
+
+  it("sorts by the cheapest active variant in both directions", async () => {
+    const ascending = await listProducts({ sort: "price-asc" });
+    const prices = ascending.items.map(
+      (item) => item.price?.fromInPaise ?? Infinity,
+    );
+    expect(prices).toEqual([...prices].sort((a, b) => a - b));
+    expect(ascending.items[0]?.slug).toBe("sample-sun-and-moon-cushion-cover");
+
+    const descending = await listProducts({ sort: "price-desc" });
+    expect(descending.items[0]?.slug).toBe("sample-kohbar-original");
+  });
+
+  it("reports which techniques are available in scope", async () => {
+    const clothing = await listProducts({ category: "clothing" });
+    expect(clothing.availableTechniques).toEqual([
+      "HAND_BLOCK_PRINTED",
+      "HAND_PAINTED",
+    ]);
+    const all = await listProducts({});
+    expect(all.availableTechniques).toContain("DIGITAL_PRINT");
+    expect(all.availableTechniques).not.toContain("APPLIQUE");
+  });
+
+  it("echoes the normalised filters", async () => {
+    const page = await listProducts({
+      q: " Fish ",
+      technique: "HAND_PAINTED",
+      inStock: "true",
+    });
+    expect(page.filters).toEqual({
+      q: "Fish",
+      techniques: ["HAND_PAINTED"],
+      minPriceInPaise: null,
+      maxPriceInPaise: null,
+      inStock: true,
+      sort: "relevance",
+    });
+  });
+});
+
+describe("getRelatedProducts", () => {
+  it("prefers the same category, then widens to sibling categories", async () => {
+    const saree = await getProductBySlug("sample-fish-motif-tussar-saree");
+    const related = await getRelatedProducts(saree, 4);
+    expect(related.map((item) => item.slug)).not.toContain(saree.slug);
+    expect(related.map((item) => item.slug).sort()).toEqual([
+      "sample-lotus-dupatta",
+      "sample-peacock-kurta-set",
+    ]);
+  });
+
+  it("never includes the product itself or hidden products", async () => {
+    const canvas = await getProductBySlug("sample-tree-of-life-canvas-print");
+    const related = await getRelatedProducts(canvas, 4);
+    const slugsFound = related.map((item) => item.slug);
+    expect(slugsFound).not.toContain(canvas.slug);
+    expect(slugsFound).not.toContain("sample-draft-wall-hanging");
+    expect(slugsFound).toEqual(["sample-kohbar-original"]);
   });
 });
 

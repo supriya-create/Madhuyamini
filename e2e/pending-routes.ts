@@ -9,7 +9,6 @@ export const PENDING_ROUTE_PREFIXES: ReadonlyArray<{
   prefix: string;
   phase: number;
 }> = [
-  { prefix: "/collections", phase: 3 },
   { prefix: "/custom-artwork", phase: 8 },
   { prefix: "/policies/", phase: 9 },
   { prefix: "/care-guide", phase: 9 },
