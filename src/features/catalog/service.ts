@@ -133,7 +133,7 @@ export async function getFeaturedProducts(
 
 // ---- Mapping -------------------------------------------------------------
 
-function toProductSummary(row: ProductSummaryRow): ProductSummary {
+export function toProductSummary(row: ProductSummaryRow): ProductSummary {
   return {
     id: row.id,
     slug: row.slug,

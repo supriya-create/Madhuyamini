@@ -10,6 +10,7 @@ Before changing code, read:
 - `docs/design-system.md`: tokens, type, components, accessibility rules
 - `docs/data-model.md`: schema, constraints, deletion behaviour
 - `docs/auth.md`: authentication design, Better Auth configuration, security checklist
+- `docs/cart.md`: cart and wishlist rules (C1–C6), guest cookie, merge on sign-in
 
 ## Workflow
 
@@ -33,6 +34,7 @@ Before changing code, read:
   - Missing imagery uses `ImagePending`, which throws in production on purpose.
 - **Database:** schema changes go through `prisma migrate dev`; invariants Prisma cannot express (`CHECK`) are hand-written into the migration SQL and tested in `tests/integration/`. Data access lives in `features/*/data.ts` with explicit `select`; UI never imports Prisma types (use the DTOs in `types.ts`). Storefront reads expose only `ACTIVE` products.
 - **Authentication:** Better Auth is configured in `src/server/auth/auth.ts`; call it only through Server Actions, never expose new HTTP paths without a reason. Authorisation lives in `src/server/auth/current-user.ts` (`requireUser`, `requireRole`) and in data access scoped by user id; `proxy.ts` is optimistic only. Never accept `role` from input. Rate-limit every credential-handling action with `consumeRateLimit`. Responses to sign-in, registration and reset must not reveal whether an email exists.
+- **Cart:** the cart is resolved from the request (`resolveCartContext`: session first, else the hashed guest cookie), never from form input; line ids are always checked against that cart. Prices and stock are re-read from the database in every operation; `priceSeenInPaise` is for the price-change notice only and is never charged. Quantities obey `clampQuantity` (max 10, 1 for one-of-a-kind, never above available stock). Wishlists are accounts-only.
 - **Seed data** is development-only: idempotent, clearly labelled, guarded against production. Never add real merchandise, customers or reviews to fixtures.
 - **Links:** internal URLs come from `src/lib/routes.ts`. Links to routes not yet built must be listed in `e2e/pending-routes.ts`.
 - **Accessibility (WCAG 2.2 AA):** axe must report zero violations, and keyboard paths are covered by e2e tests.

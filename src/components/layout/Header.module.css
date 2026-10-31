@@ -31,6 +31,7 @@
 }
 
 .iconLink {
+  position: relative;
   display: inline-grid;
   place-items: center;
   width: var(--tap-target);
@@ -65,4 +66,20 @@
   .wordmark {
     font-size: 2rem;
   }
+}
+
+.badge {
+  position: absolute;
+  inset-block-start: 0.35rem;
+  inset-inline-end: 0.15rem;
+  min-width: 1.125rem;
+  height: 1.125rem;
+  padding-inline: 0.25rem;
+  border-radius: 0.5625rem;
+  background-color: var(--color-sindoor);
+  color: var(--color-ivory);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.125rem;
+  text-align: center;
 }

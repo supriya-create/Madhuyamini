@@ -1,22 +1,22 @@
 # Madhuyamini — Roadmap
 
-Status: **Phases 1–4 implemented (31 Oct 2026).** Brand inputs (D2) are still outstanding; Phase 4 awaits owner review.
+Status: **Phases 1–5 implemented (31 Oct 2026).** Brand inputs (D2) are still outstanding; Phase 5 awaits owner review.
 
 Related: [architecture.md](architecture.md) · [design-system.md](design-system.md). Decision IDs (D1–D9) refer to architecture.md §7.
 
-| #   | Phase                                       | Status                            | Decisions needed first |
-| --- | ------------------------------------------- | --------------------------------- | ---------------------- |
-| 1   | Project setup and homepage foundation       | **Implemented; open items**       | D2 (D1 decided)        |
-| 2   | Database and backend foundation             | **Implemented; open items**       | D4 (deferred to 11)    |
-| 3   | Product catalog                             | **Implemented; open items**       | D2 (imagery)           |
-| 4   | Authentication and customer accounts        | **Proposed** ([auth.md](auth.md)) | D3, D5, P1–P5          |
-| 5   | Cart and wishlist                           | **Proposed** ([cart.md](cart.md)) | C1–C6                  |
-| 6   | Checkout and payments (Razorpay + COD)      | Not started                       | D6, D7                 |
-| 7   | Admin dashboard                             | Not started                       | none                   |
-| 8   | Advanced e-commerce features                | Not started                       | D7                     |
-| 9   | Brand experience and content                | Not started                       | D2                     |
-| 10  | Testing, security and performance hardening | Not started                       | D8, D9                 |
-| 11  | Production deployment                       | Not started                       | none                   |
+| #   | Phase                                       | Status                               | Decisions needed first  |
+| --- | ------------------------------------------- | ------------------------------------ | ----------------------- |
+| 1   | Project setup and homepage foundation       | **Implemented; open items**          | D2 (D1 decided)         |
+| 2   | Database and backend foundation             | **Implemented; open items**          | D4 (deferred to 11)     |
+| 3   | Product catalog                             | **Implemented; open items**          | D2 (imagery)            |
+| 4   | Authentication and customer accounts        | **Implemented** ([auth.md](auth.md)) | decided (D3, D5, P1–P5) |
+| 5   | Cart and wishlist                           | **Implemented** ([cart.md](cart.md)) | decided (C1–C6)         |
+| 6   | Checkout and payments (Razorpay + COD)      | Not started                          | D6, D7                  |
+| 7   | Admin dashboard                             | Not started                          | none                    |
+| 8   | Advanced e-commerce features                | Not started                          | D7                      |
+| 9   | Brand experience and content                | Not started                          | D2                      |
+| 10  | Testing, security and performance hardening | Not started                          | D8, D9                  |
+| 11  | Production deployment                       | Not started                          | none                    |
 
 ### Sequencing notes
 
@@ -240,7 +240,8 @@ Database-backed listing, detail and search pages with filters, sorting, paginati
 - [x] Homepage: "Shop by collection" and admin-curated "Featured pieces" (hidden when empty; never labelled best-selling)
 - [x] Cloudinary `next/image` loader (unit-tested); hero image slot with a build-time guard
 - [ ] Product photography (D2): every product currently shows "Photograph coming soon"
-- [ ] Add-to-cart (Phase 5), size guide and delivery information (Phase 6/8, needs D7)
+- [x] Add-to-cart (Phase 5)
+- [ ] Size guide and delivery information (Phase 6/8, needs D7)
 
 **3.4 Tests**
 
@@ -315,6 +316,48 @@ Fixes made because tests caught them: Better Auth's rate-limit table needs its o
 - **Reset links in email are app URLs** (`/reset-password?token=…`); Better Auth's default link to its own API is not used, which keeps the HTTP surface closed.
 - **Expired session and rate-limit rows** are not yet swept on a schedule; `cleanupRateLimits()` exists and the cron arrives in Phase 6.
 - **`npm audit`** continues to report only the dev-only ESLint 9 advisories; Better Auth added no vulnerabilities.
+
+---
+
+## Phase 5 — Cart and wishlist
+
+Approved 31 Oct 2026 with decisions C1–C6 as refined by the owner; design, refinements and implementation notes in [cart.md](cart.md).
+
+### Checklist
+
+- [x] Migration 5 (`carts`, `cart_items`, `wishlist_items`) with CHECK constraints, partial unique index for one active cart per user, `rollback.sql`; zero drift
+- [x] Pure rules (`clampQuantity`, `lineAvailability`, subtotal/count/`canCheckout`, merge arithmetic, guest expiry) with unit tests
+- [x] Guest identity: 256-bit random token in an `HttpOnly`/`SameSite=Lax` cookie (`__Host-` + `Secure` in production), only its SHA-256 stored, renewed on each guest mutation, 30 days from last activity (C2)
+- [x] Cart service: add (atomic under a row lock; re-reads status, stock and price; C1 limits with explicit "limited by" feedback), update, remove, price acknowledgement (C5), guest→account merge (C6: transactional, idempotent, nothing discarded), cleanup of expired guest carts
+- [x] Server Actions with Zod, cart taken from the request only, 60 mutations/min per cart identity; guest cookie issued on first add
+- [x] Sign-in merges the guest cart; adjusted quantities land on `/cart?cart=adjusted` with a notice; merge failures never block sign-in
+- [x] UI: quantity + Add to cart on every product page (single- and multi-variant), header bag with count, `/cart` (live prices, price-change notice with "Got it", quantity select that submits on change with a `<noscript>` Update button, remove, subtotal, shipping/tax note, availability banners, merge notice, empty and loading states, no checkout button yet), `/account/wishlist` with Remove, Save/Saved heart on the product page, Wishlist in the account navigation
+- [x] Unavailable lines (archived, inactive, sold out, fewer than chosen) stay visible with a status, are excluded from the subtotal and block checkout (requirement 1)
+- [x] Tests: unit (rules, schemas, token), integration (26: limits, stock, one-of-a-kind, unavailable states, live price and acknowledgement, ownership across guest/user/anonymous, expiry refresh, stale token, cleanup, merge sums/caps/flags/idempotency/concurrency, wishlist ownership/uniqueness/active-only), e2e (add + header count + cart page, persistence across reload and a restored session, quantity change and remove, one-of-a-kind cap, tampered quantity rejected, guest→account merge with adjustment, wishlist sign-in redirect/toggle/page, private wishlist, axe on cart and wishlist)
+- [ ] Hearts on listing cards — follow-up
+- [ ] Scheduled `cleanupCarts()` — Phase 6 cron
+- [ ] Checkout gating on `canCheckout`, `CONVERTED` status — Phase 6
+
+### Results (31 Oct 2026)
+
+| Gate                       | Result                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run typecheck`        | Clean                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `npm run lint`             | 0 problems                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `npm run format:check`     | Clean                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `npm test` (unit)          | 131 passed (+14: cart rules, schemas, guest token)                                                                                                                                                                                                                                                                                                                                                                        |
+| `npm run test:integration` | 101 passed (+26: `cart.test.ts` 22, `wishlist.test.ts` 4)                                                                                                                                                                                                                                                                                                                                                                 |
+| `npm run build`            | Succeeds (inside the e2e step)                                                                                                                                                                                                                                                                                                                                                                                            |
+| `npm run test:e2e`         | 249 passed, 19 skipped by design (+32: `cart.spec.ts`, 8 journeys × 4 browser projects): add from the product page with header count, persistence across reload and a restored session, quantity change and remove, one-of-a-kind cap, tampered quantity via the no-JavaScript form post, guest→account merge with adjustment, wishlist redirect/toggle/page, private wishlist, axe on cart (full and empty) and wishlist |
+| Migration 5                | Applied on both local databases; `rollback.sql` exercised on the test database and re-deployed; zero drift on both                                                                                                                                                                                                                                                                                                        |
+
+Fixes made because tests caught them: a `"use server"` module may export only async functions, so the form's state type and idle value moved to `action-state.ts`; a `<label>` wrapping a `<select>` takes the selected value into its accessible name, so the quantity controls use `htmlFor`/`aria-label`; Next's route announcer is also `role="alert"`, so the e2e locators are scoped to the form; the tamper test posts the server-rendered form (React removes the `$ACTION_*` fields once hydrated, so they are read from the raw HTML). Design-side: a cookie that outlives its cart now gets a fresh cart (the stale hash is released first), the cookie's `Max-Age` is renewed on each guest mutation so it tracks the cart's expiry, and add-to-cart runs under a row lock so concurrent adds are not lost (both proven by integration tests).
+
+### Known issues and follow-ups
+
+- **No hearts on listing cards yet.** The wishlist can be toggled from the product page and the wishlist page; adding the heart to every card means threading the saved-id set through the listing pages, which is a small follow-up.
+- **Sold-out and price-change states are covered by integration tests, not e2e.** The e2e server runs on the seeded development database and must not alter stock or prices mid-run.
+- **Expired guest carts** are closed by `cleanupCarts()`, which has no schedule yet (Phase 6 crons, with the session and rate-limit sweeps).
 
 ---
 

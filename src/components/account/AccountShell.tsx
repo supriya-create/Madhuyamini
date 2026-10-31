@@ -33,6 +33,7 @@ export function AccountShell({ user, title, children }: AccountShellProps) {
             { label: "Overview", href: routes.account },
             { label: "Your details", href: routes.accountProfile },
             { label: "Addresses", href: routes.accountAddresses },
+            { label: "Wishlist", href: routes.accountWishlist },
             { label: "Password and devices", href: routes.accountSecurity },
           ]}
         />

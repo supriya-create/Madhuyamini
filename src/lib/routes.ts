@@ -22,6 +22,8 @@ export const routes = {
   accountAddressNew: "/account/addresses/new",
   accountAddressEdit: (id: string) => `/account/addresses/${id}/edit`,
   accountSecurity: "/account/security",
+  accountWishlist: "/account/wishlist",
+  cart: "/cart",
   customArtwork: "/custom-artwork",
   contact: "/contact",
   careGuide: "/care-guide",

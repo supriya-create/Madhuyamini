@@ -37,7 +37,7 @@ I checked the npm registry on 31 Oct 2026. Exact versions will be locked in `pac
 | Unit and integration tests | Vitest                               | 5.x                                | Requires Node ≥ 22.12.                                                                                                                                                           |
 | End-to-end tests           | Playwright + `@axe-core/playwright`  | 1.64.x / 4.14.x                    | axe runs automated WCAG checks inside e2e tests.                                                                                                                                 |
 | Icons                      | `lucide-react`                       | 1.x                                | Per-icon imports (tree-shaken).                                                                                                                                                  |
-| Client state               | Zustand                              | 5.x                                | Added only when cross-component client state appears (cart drawer, Phase 5).                                                                                                     |
+| Client state               | Zustand                              | 5.x                                | Not yet needed: the cart count is server-rendered and refreshed by `revalidatePath` after each Server Action. Add only if a client-side drawer arrives.                          |
 | Payments                   | `razorpay` Node SDK                  | 2.9.x                              | Server-only.                                                                                                                                                                     |
 | Email                      | Resend                               | 6.x                                | Needs a verified sending domain (SPF/DKIM).                                                                                                                                      |
 | Password hashing           | `@node-rs/argon2`                    | 2.x                                | Argon2id. Only if we own authentication (D3).                                                                                                                                    |
@@ -77,7 +77,8 @@ madhuyamini/
 │   │   │   ├── search/             # full-text search + loading
 │   │   │   ├── login/ · register/ · reset-password/   # Phase 4
 │   │   │   ├── account/            # Phase 4, session-guarded
-│   │   │   ├── cart/ · checkout/   # Phases 5–6
+│   │   │   ├── cart/               # Phase 5: cart page + loading
+│   │   │   ├── checkout/           # Phase 6
 │   │   │   ├── orders/track/       # Phase 6, guest order lookup
 │   │   │   └── (content)/          # about, artists, care guide, policies (Phase 9)
 │   │   ├── admin/                  # Phase 7: own layout, role checked on every request
@@ -86,6 +87,7 @@ madhuyamini/
 │   │       └── cron/                        # reservation expiry, payment reconciliation
 │   ├── components/
 │   │   ├── catalog/                # ProductCard, ProductGrid, ListingControls, VariantSelector, gallery, states …
+│   │   ├── cart/                   # AddToCartForm, CartLine, QuantitySelect, CartSummary, WishlistToggle
 │   │   ├── ui/                     # design-system primitives: Button, Container, Section, Eyebrow, Icon …
 │   │   ├── layout/                 # AnnouncementBar, Header, DesktopNav, MobileNav, Footer, SkipLink
 │   │   ├── home/                   # homepage sections
@@ -168,6 +170,7 @@ The brief asked to keep the initial homepage in `src/app/page.tsx`. The owner ap
   - Password-reset tokens are hashed, single-use and expire after 30 minutes.
   - Login and reset responses are identical whether or not an account exists, so they don't reveal which emails are registered.
   - Rate limiting applies per IP and per account.
+- **Cart (Phase 5):** guest carts are identified by a 256-bit random cookie token stored only as a SHA-256 hash (`__Host-` prefix in production); signed-in customers' carts are found by session, never by cookie. Every mutation re-reads product status, variant status, price and stock; `priceSeenInPaise` is never charged. Line ids are resolved together with the request's cart, so another cart's line is "not found". Cart mutations are rate-limited per cart identity. Details in [cart.md](cart.md) §8.
   - Recommended addition: TOTP two-factor authentication for admin accounts.
 - **Payments (Phase 6):**
   - Razorpay orders are created on the server.
@@ -181,7 +184,7 @@ The brief asked to keep the initial homepage in `src/app/page.tsx`. The owner ap
 
 ### 5.2 Performance
 
-- Server Components by default. Client components only for the mobile navigation dialog, desktop navigation disclosures, cart count and drawer, variant picker, image gallery, and forms with live validation.
+- Server Components by default. Client components only for the mobile navigation dialog, desktop navigation disclosures, variant picker, image gallery, the add-to-cart form (`useActionState`), the cart quantity select (submits on change; `<noscript>` Update button otherwise) and forms with live validation. The header cart count is a Server Component.
 - Catalog pages (home, collections, products) are cached and invalidated by tag when an admin edits them. Next 16 Cache Components will be evaluated in Phase 3. **Checkout re-reads price and stock from the database.** A cached page is never trusted for money or inventory.
 - **Never cached:** cart, checkout, account, orders, admin, stock reservations.
 - **Images:** Cloudinary `f_auto,q_auto` with explicit `sizes`. Only the LCP image is preloaded; everything else is lazy-loaded.

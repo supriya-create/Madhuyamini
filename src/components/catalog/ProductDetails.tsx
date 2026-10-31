@@ -1,3 +1,5 @@
+import { AddToCartForm } from "@/components/cart/AddToCartForm";
+import { WishlistToggle } from "@/components/cart/WishlistToggle";
 import { MotifDivider } from "@/components/motifs/MotifDivider";
 import { Container } from "@/components/ui/Container";
 import {
@@ -20,9 +22,15 @@ import { VariantSelector } from "./VariantSelector";
 type ProductDetailsProps = {
   product: ProductDetail;
   related: readonly ProductSummary[];
+  /** Whether the signed-in customer has saved this product (false for guests). */
+  saved?: boolean;
 };
 
-export function ProductDetails({ product, related }: ProductDetailsProps) {
+export function ProductDetails({
+  product,
+  related,
+  saved = false,
+}: ProductDetailsProps) {
   const singleVariant =
     product.options.length === 0 ? product.variants[0] : undefined;
 
@@ -83,6 +91,15 @@ export function ProductDetails({ product, related }: ProductDetailsProps) {
                   <span className={styles.skuLabel}>SKU</span>{" "}
                   {singleVariant.sku}
                 </p>
+                <AddToCartForm
+                  variantId={singleVariant.id}
+                  maxQuantity={
+                    product.isOneOfAKind
+                      ? Math.min(1, singleVariant.available)
+                      : singleVariant.available
+                  }
+                  disabled={!singleVariant.isPurchasable}
+                />
               </div>
             ) : product.variants.length > 0 ? (
               <div className={styles.purchase}>
@@ -97,6 +114,16 @@ export function ProductDetails({ product, related }: ProductDetailsProps) {
                 This piece is not currently available.
               </p>
             )}
+
+            <div className={styles.wishlist}>
+              <WishlistToggle
+                productId={product.id}
+                productTitle={product.title}
+                saved={saved}
+                returnTo={routes.product(product.slug)}
+                variant="button"
+              />
+            </div>
 
             <section
               className={styles.section}

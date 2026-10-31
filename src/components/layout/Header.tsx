@@ -1,4 +1,4 @@
-import { Search, UserRound } from "lucide-react";
+import { Search, ShoppingBag, UserRound } from "lucide-react";
 import Link from "next/link";
 
 import { SearchForm } from "@/components/catalog/SearchForm";
@@ -7,7 +7,9 @@ import { navExtras } from "@/content/navigation";
 import type { NavCategory } from "@/content/navigation";
 import { site } from "@/content/site";
 import { getCategoryTree } from "@/features/catalog/service";
+import { getCartItemCount } from "@/features/cart/service";
 import { getCurrentUser } from "@/server/auth/current-user";
+import { resolveCartContext } from "@/server/cart/context";
 import type { CategoryNode } from "@/features/catalog/types";
 import { routes } from "@/lib/routes";
 
@@ -30,7 +32,11 @@ function toNavCategory(node: CategoryNode): NavCategory {
 }
 
 export async function Header() {
-  const [tree, user] = await Promise.all([getCategoryTree(), getCurrentUser()]);
+  const [tree, user, cartCount] = await Promise.all([
+    getCategoryTree(),
+    getCurrentUser(),
+    resolveCartContext().then(getCartItemCount),
+  ]);
   const categories = tree.map(toNavCategory);
 
   return (
@@ -68,7 +74,22 @@ export async function Header() {
               {user ? "Your account" : "Sign in"}
             </span>
           </Link>
-          {/* Wishlist and cart are added here as those features ship. */}
+          <Link
+            href={routes.cart}
+            className={styles.iconLink}
+            data-account
+            data-cart
+          >
+            <Icon icon={ShoppingBag} size={24} />
+            <span className="visually-hidden">
+              Cart, {cartCount} {cartCount === 1 ? "item" : "items"}
+            </span>
+            {cartCount > 0 ? (
+              <span aria-hidden="true" className={styles.badge}>
+                {cartCount > 99 ? "99+" : cartCount}
+              </span>
+            ) : null}
+          </Link>
         </div>
       </div>
       <DesktopNav categories={categories} extras={navExtras} />

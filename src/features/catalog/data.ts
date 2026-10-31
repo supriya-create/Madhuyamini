@@ -244,8 +244,8 @@ export async function findProductsPage(filters: ProductPageFilters) {
   return { items, total };
 }
 
-/** Loads summaries for ids and restores the order the query produced. */
-async function findProductSummariesByIds(ids: readonly string[]) {
+/** Loads summaries for ids and restores the order given. */
+export async function findProductSummariesByIds(ids: readonly string[]) {
   if (ids.length === 0) return [];
   const rows = await db.product.findMany({
     where: { id: { in: [...ids] } },

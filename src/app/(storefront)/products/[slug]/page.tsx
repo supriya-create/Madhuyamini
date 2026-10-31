@@ -6,7 +6,9 @@ import {
   getProductBySlug,
   getRelatedProducts,
 } from "@/features/catalog/service";
+import { getSavedProductIds } from "@/features/wishlist/service";
 import { routes } from "@/lib/routes";
+import { getCurrentUser } from "@/server/auth/current-user";
 
 export async function generateMetadata({
   params,
@@ -46,7 +48,16 @@ export default async function ProductPage({
     () => getProductBySlug(slug),
     routes.collections,
   );
-  const related = await getRelatedProducts(product, 4);
+  const [related, saved] = await Promise.all([
+    getRelatedProducts(product, 4),
+    getCurrentUser().then(getSavedProductIds),
+  ]);
 
-  return <ProductDetails product={product} related={related} />;
+  return (
+    <ProductDetails
+      product={product}
+      related={related}
+      saved={saved.has(product.id)}
+    />
+  );
 }

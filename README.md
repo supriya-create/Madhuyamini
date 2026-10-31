@@ -73,5 +73,6 @@ Variables are validated at startup in `src/server/env-schema.ts`.
 - [Architecture and decisions](docs/architecture.md)
 - [Data model](docs/data-model.md)
 - [Authentication and accounts](docs/auth.md)
+- [Cart and wishlist](docs/cart.md)
 - [Design system](docs/design-system.md)
 - [Engineering rules](CLAUDE.md)

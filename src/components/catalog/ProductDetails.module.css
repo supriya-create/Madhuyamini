@@ -137,3 +137,7 @@
     gap: var(--space-9);
   }
 }
+
+.wishlist {
+  padding-block-start: var(--space-2);
+}

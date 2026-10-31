@@ -3,7 +3,12 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
+import { mergeGuestCartIntoUser } from "@/features/cart/service";
 import { auth } from "@/server/auth/auth";
+import {
+  clearGuestCartCookie,
+  readGuestCartToken,
+} from "@/server/cart/context";
 import {
   getCurrentUser,
   requestClientAddress,
@@ -141,6 +146,7 @@ export async function signInAction(
   }
   const { email, password } = parsed.data;
   const destination = safeReturnPath(parsed.data.next, routes.account);
+  let userId: string;
 
   try {
     const address = await requestClientAddress();
@@ -152,15 +158,34 @@ export async function signInAction(
       rateLimitKey("sign-in:email", email),
       authRateLimits.signInByEmail,
     );
-    await auth.api.signInEmail({
+    const result = await auth.api.signInEmail({
       body: { email, password },
       headers: await headers(),
     });
+    userId = result.user.id;
   } catch (error) {
     if (error instanceof RateLimitedError)
       return rateLimited(error.retryAfterSeconds);
     // Wrong password, unknown email and unverified-only errors all collapse to one message.
     return { status: "error", message: GENERIC_SIGN_IN_ERROR };
+  }
+
+  // C6: a cart started as a guest joins the customer's cart. Idempotent and
+  // transactional; the guest cookie is cleared afterwards.
+  const guestToken = await readGuestCartToken();
+  if (guestToken) {
+    let adjusted = false;
+    try {
+      const merge = await mergeGuestCartIntoUser(userId, guestToken);
+      adjusted = merge.merged && merge.adjusted > 0;
+      await clearGuestCartCookie();
+    } catch (error) {
+      // The customer is signed in either way; the guest cart stays with its
+      // cookie and is merged on the next sign-in.
+      console.error("guest cart merge failed", error);
+    }
+    // Quantities were reduced: the customer reviews them before anything else.
+    if (adjusted) redirect(`${routes.cart}?cart=adjusted`);
   }
 
   redirect(destination);

@@ -2,7 +2,7 @@
 
 Status: **Approved and implemented, 31 Oct 2026.** Schema: `prisma/schema.prisma`; constraints: `prisma/migrations/20261031103938_init_catalog_and_customers/migration.sql`.
 
-Scope of this phase: User, Address, Category, Product (with options), ProductImage, ProductVariant, Inventory and Review. Carts, orders, payments, sessions, coupons and shipments are added in their own phases and must not be modelled speculatively now.
+Scope of this phase: User, Address, Category, Product (with options), ProductImage, ProductVariant, Inventory and Review. Sessions (Phase 4, [auth.md](auth.md)) and carts and wishlists (Phase 5, [cart.md](cart.md)) were added in their own phases; orders, payments, coupons and shipments follow in theirs and must not be modelled speculatively now.
 
 ---
 
@@ -165,6 +165,31 @@ A time-limited hold on stock while an online payment is pending. Added in Phase 
 | `status`              | `PENDING` → `APPROVED` / `REJECTED`. Only approved reviews are ever shown.                                     |
 | `isVerifiedPurchase`  | Set by Phase 8 from order history; a nullable `orderItemId` is added then. Until Phase 8 nothing is displayed. |
 
+### Cart (Phase 5, migration 5)
+
+| Field            | Notes                                                                                                                                                                                                                  |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `userId?`        | Signed-in owner (Cascade). Null for guest carts.                                                                                                                                                                       |
+| `tokenHash?`     | SHA-256 of the guest cookie token, unique. The token itself is never stored. Freed (set null) when the cart is expired, merged or abandoned so the same cookie can start a fresh cart.                                 |
+| `status`         | `ACTIVE` → `MERGED` (guest cart folded into an account), `CONVERTED` (Phase 6, became an order) or `ABANDONED` (expired guest cart). `carts_one_active_per_user`: partial unique on `user_id WHERE status = 'ACTIVE'`. |
+| `lastActivityAt` | Updated by every successful mutation.                                                                                                                                                                                  |
+| `expiresAt?`     | Guest carts only: `lastActivityAt + 30 days` (C2). `CHECK carts_active_owner`: an active cart has exactly one of `user_id` / `token_hash`. `CHECK carts_guest_expiry`: an active guest cart has an expiry.             |
+
+### CartItem
+
+| Field              | Notes                                                                                                                                                                    |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `cartId`           | Cascade.                                                                                                                                                                 |
+| `variantId`        | Restrict: a variant in any cart cannot be deleted; archive the product instead and the cart flags the line. Unique together with `cartId` (one line per variant).        |
+| `quantity`         | `CHECK BETWEEN 1 AND 10` (C1). Stock and one-of-a-kind limits are applied in the service, not the database, because they change.                                         |
+| `priceSeenInPaise` | The variant's price when the line was added or last acknowledged (`CHECK > 0`). **Never charged**: it exists only to tell the customer that the live price differs (C5). |
+
+### WishlistItem
+
+| Field                 | Notes                                                                                      |
+| --------------------- | ------------------------------------------------------------------------------------------ |
+| `userId`, `productId` | Both Cascade. Unique together. Product-level (C3), because variants change. Accounts only. |
+
 ---
 
 ## 3. Deletion behaviour summary
@@ -179,6 +204,10 @@ A time-limited hold on stock while an online payment is pending. Added in Phase 
 | ProductOptionValue → ProductVariantValue | Restrict | Delete the variants first.                                                                               |
 | ProductVariant → Inventory, VariantValue | Cascade  |                                                                                                          |
 | ProductVariant → ProductImage.variantId  | SetNull  | The image survives as a product image.                                                                   |
+| User → Cart, WishlistItem                | Cascade  | Personal data goes with the account.                                                                     |
+| Cart → CartItem                          | Cascade  |                                                                                                          |
+| ProductVariant → CartItem                | Restrict | Archive instead; the cart shows the line as unavailable.                                                 |
+| Product → WishlistItem                   | Cascade  | A deleted product simply leaves wishlists.                                                               |
 
 ---
 

@@ -11,7 +11,8 @@ export async function resetDatabase(): Promise<void> {
     TRUNCATE TABLE
       reviews, inventory_reservations, inventory, product_variant_values, product_variants,
       product_option_values, product_options, product_images, products,
-      categories, addresses, sessions, accounts, verifications, rate_limits, users
+      categories, addresses, sessions, accounts, verifications, rate_limits,
+      cart_items, carts, wishlist_items, users
     RESTART IDENTITY CASCADE
   `;
 }

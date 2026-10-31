@@ -8,6 +8,8 @@ import type {
   ProductVariantDto,
 } from "@/features/catalog/types";
 
+import { AddToCartForm } from "@/components/cart/AddToCartForm";
+
 import { Availability } from "./Availability";
 import { Price } from "./Price";
 import styles from "./VariantSelector.module.css";
@@ -127,6 +129,16 @@ export function VariantSelector({
             <p className={styles.sku}>
               <span className={styles.skuLabel}>SKU</span> {variant.sku}
             </p>
+            <AddToCartForm
+              key={variant.id}
+              variantId={variant.id}
+              maxQuantity={
+                isOneOfAKind
+                  ? Math.min(1, variant.available)
+                  : variant.available
+              }
+              disabled={!variant.isPurchasable}
+            />
           </>
         ) : (
           <p className={styles.unavailable}>
