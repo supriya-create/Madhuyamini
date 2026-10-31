@@ -1,6 +1,6 @@
 # Madhuyamini — Authentication and Customer Accounts
 
-Status: **Proposed for Phase 4, awaiting approval** · 31 Oct 2026
+Status: **Approved and implemented, 31 Oct 2026.** The owner chose **Better Auth** for D3 (not the custom-session option this document originally recommended) and PostgreSQL counters for D5; policy answers P1–P5 are recorded below. Implementation notes follow the original design in §9.
 
 Scope: registration, sign-in, sign-out, email verification, password reset and change, session management, profile and address book, protected routes and role checks. Not in this phase: social or phone sign-in, two-factor authentication (admin, Phase 7), order history (Phase 6), cart merging (Phase 5), newsletter consent (outstanding from Phase 2).
 
@@ -10,11 +10,11 @@ Scope: registration, sign-in, sign-out, email verification, password reset and c
 
 ### D3 — Authentication approach
 
-| Option                                     | What we get                                                                                                                                                           | What we take on                                                                                                                                       | Verdict                                                                                   |
-| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| **Custom database sessions** (recommended) | Full control: revocable sessions, our own schema, our own rate limiting, no beta dependency. Inside the brief's stated stack ("secure session-based authentication"). | We own ~600 lines of security code (hashing, tokens, cookies, limits) and must test it exhaustively. No social or phone sign-in without further work. | **Recommended for email + password.**                                                     |
-| Better Auth 1.7                            | Email/password, verification, reset, sessions, rate limiting, plus plugins for phone OTP, social and admin roles. Maintained; listed in Next's own guide.             | Stack deviation needing approval; its own tables and routes; upgrade churn; another large dependency in the trust boundary.                           | Choose this **only if phone-OTP or social sign-in is wanted within the next few phases.** |
-| Auth.js (NextAuth) v5                      | —                                                                                                                                                                     | Still `5.0.0-beta.32` after three years; credentials sign-in forces stateless JWT sessions, which cannot be revoked server-side.                      | Not suitable for a store.                                                                 |
+| Option                   | What we get                                                                                                                                                           | What we take on                                                                                                                                       | Verdict                                                                      |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Custom database sessions | Full control: revocable sessions, our own schema, our own rate limiting, no beta dependency. Inside the brief's stated stack ("secure session-based authentication"). | We own ~600 lines of security code (hashing, tokens, cookies, limits) and must test it exhaustively. No social or phone sign-in without further work. | **Recommended for email + password.**                                        |
+| Better Auth 1.7          | Email/password, verification, reset, sessions, rate limiting, plus plugins for phone OTP, social and admin roles. Maintained; listed in Next's own guide.             | Stack deviation needing approval; its own tables and routes; upgrade churn; another large dependency in the trust boundary.                           | **Chosen (owner decision).** Verified against this stack before use; see §9. |
+| Auth.js (NextAuth) v5    | —                                                                                                                                                                     | Still `5.0.0-beta.32` after three years; credentials sign-in forces stateless JWT sessions, which cannot be revoked server-side.                      | Not suitable for a store.                                                    |
 
 ### D5 — Rate-limit store
 
@@ -155,3 +155,51 @@ Templates are plain text with a minimal HTML version (no images, no tracking). F
 4. axe reports zero violations on auth and account pages; forms are usable with a screen reader and password manager.
 5. Rate limits and enumeration protections are demonstrated by tests, not asserted in prose.
 6. The production environment refuses to start without a real email transport.
+
+---
+
+## 9. Implementation notes (Better Auth 1.7.14)
+
+### Verification performed before building
+
+| Owner's check                                         | Result                                                                                                                                                                                                                                                                                                                                                                                                |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Next.js App Router, Prisma 7.10, `@prisma/adapter-pg` | Peer ranges declare Next 16, Prisma 7 and Vitest 5. `prismaAdapter(db, { provider: "postgresql" })` works over the existing driver-adapter client. Better Auth validates the Prisma schema at startup and reports mismatches precisely (it caught a missing `rate_limits.id`).                                                                                                                        |
+| Existing `User` model                                 | Reused as is: Better Auth maps to Prisma model `User` (client property `user`). `role` and `phone` are declared as `additionalFields` with `input: false`, so the server owns them. `emailVerifiedAt` became `emailVerified Boolean`; the unused `passwordHash` moved to `accounts.password`. No duplicate user rows: `tests/integration/auth.test.ts` asserts a single row after duplicate sign-ups. |
+| Database sessions, listing, revocation                | `sessions` table; `auth.api.listSessions`, `revokeSession({ token })`, `revokeOtherSessions`, `revokeSessions` all exercised. Cookie cache is disabled, so revocation is immediate.                                                                                                                                                                                                                   |
+| Verification, reset, change                           | Verification link (24 h), reset link (30 min, single use, revokes all sessions), change password (revokes others and **rotates the current session**: a new cookie is issued).                                                                                                                                                                                                                        |
+| Authorisation in our layer                            | `src/server/auth/current-user.ts` (`getCurrentUser`, `requireUser`, `requireRole`) and the account data layer scope every query by the verified user id. `proxy.ts` is cookie-presence only.                                                                                                                                                                                                          |
+
+### Where the original design changed
+
+- **Password policy** runs inside a Better Auth `hooks.before` on `/sign-up/email`, `/reset-password` and `/change-password`, so it covers server-side calls (verified) as well as HTTP. Hashing uses Better Auth's default scrypt (OWASP-acceptable) rather than Argon2id, avoiding a native dependency.
+- **Compromised passwords** (P3): local rules (length, not your email/name, common/predictable list) plus a Have I Been Pwned k-anonymity lookup that **fails open** and is on only when `PASSWORD_BREACH_CHECK=hibp` (production default). Better Auth's own HIBP plugin fails closed, which would block registration during an outage, so it is not used.
+- **HTTP surface:** every Better Auth endpoint except `/verify-email`, `/ok` and `/error` answers 404 over HTTP (hook on `ctx.request`). Sign-in, registration, reset and session management go through Server Actions, which add the PostgreSQL rate limits (D5) and generic responses. Better Auth's built-in limiter still guards the remaining HTTP paths.
+- **Duplicate registration** (requirement 5): with `autoSignIn: false`, Better Auth returns an identical generic response for new and existing emails and performs a dummy hash for timing. No email is sent to the existing holder. Registration therefore never signs the customer in; the success screen offers sign-in (allowed before verification, P1).
+- **Absolute session lifetime** (P4): Better Auth has no cap, so `getCurrentUser()` revokes sessions older than 30 days; the 14-day idle timeout is Better Auth's `expiresIn` with daily refresh.
+- **IP addresses** are not stored (`disableIpTracking`); rate-limit keys hash the address and the normalised email.
+- **Email** (requirement 6): `EMAIL_TRANSPORT` must be `resend` in production, but a missing `RESEND_API_KEY` fails only when a message is actually sent, not at build time. The file transport (`.mail/`) powers development and tests.
+- **Optional phone at registration** is written by the app only when the user row was created by that very call (`createdAt` within 10 s and `phone` null), so a duplicate attempt can never alter an existing account.
+
+### Migration and rollback
+
+Migration `20261031150000_better_auth_sessions_accounts` adds `sessions`, `accounts`, `verifications` and `rate_limits`, and alters `users` (adds `email_verified`, `image`; drops the never-used `password_hash`, `email_verified_at`). `rollback.sql` beside it reverses the change; it was exercised on both local databases during development (tables dropped, `_prisma_migrations` row deleted, migration re-applied, zero drift).
+
+### Dependencies added
+
+`better-auth@1.7.14` (runtime). Nothing else: Resend is called over its REST API with `fetch`, and no password-hashing or validation libraries were added.
+
+### Security checklist
+
+| Requirement               | How it is met                                                                                                                                                                                                                              |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Cookies                   | Better Auth session cookie: `HttpOnly`, `SameSite=Lax`, `Secure` in production (`__Secure-` prefix).                                                                                                                                       |
+| CSRF                      | All mutations are Server Actions (Next.js origin checks); Better Auth's HTTP handler also checks `Origin` against `trustedOrigins`.                                                                                                        |
+| Session fixation          | A new session token is issued on every sign-in; password change rotates the session; reset revokes all sessions.                                                                                                                           |
+| IDOR                      | Account data access takes the verified user id in every query (`tests/integration/account.test.ts` proves cross-user reads, edits, promotions and deletes fail). Session revocation only accepts tokens that belong to the signed-in user. |
+| Privilege escalation      | `role` is `input: false`: Better Auth rejects it from any input (tested). Role changes are admin-only (Phase 7) and will revoke the user's sessions.                                                                                       |
+| Authorisation placement   | Pages, layouts and actions call `requireUser`/`requireRole`; `proxy.ts` is optimistic only.                                                                                                                                                |
+| Enumeration               | Generic responses on register, sign-in and reset; dummy hashing on duplicate sign-up; no email to existing holders.                                                                                                                        |
+| Rate limiting             | PostgreSQL counters per IP and per hashed email for sign-in, registration, reset and verification resend; temporary blocks only; `cleanupRateLimits()` for the Phase 6 sweep.                                                              |
+| Secrets                   | `BETTER_AUTH_SECRET` ≥ 32 chars, validated and never echoed; no secrets in client bundles.                                                                                                                                                 |
+| Accessible authentication | Labels, `autocomplete` tokens, show/hide password, errors linked to fields and announced, no CAPTCHA, paste allowed.                                                                                                                       |

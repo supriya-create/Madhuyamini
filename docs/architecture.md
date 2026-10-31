@@ -1,6 +1,6 @@
 # Madhuyamini — Architecture
 
-Status: **Approved 31 Oct 2026** (D1 decided: route groups). Phases 1–2 are implemented; see [roadmap.md](roadmap.md) and [data-model.md](data-model.md).
+Status: **Approved 31 Oct 2026** (D1 decided: route groups; D3 decided: Better Auth). Phases 1–4 are implemented; see [roadmap.md](roadmap.md), [data-model.md](data-model.md) and [auth.md](auth.md).
 
 Companion documents: [roadmap.md](roadmap.md) (phases and the Phase 1 checklist) and [design-system.md](design-system.md).
 
@@ -99,6 +99,8 @@ madhuyamini/
 │   │       ├── actions.ts          # 'use server' adapters: parse → service → typed result
 │   │       └── components/
 │   ├── server/                     # server-only infrastructure
+│   │   ├── auth/                   # auth.ts (Better Auth) · current-user.ts (DAL) · password-policy · rate-limit
+│   │   ├── email/                  # transports (file · log · Resend) · templates
 │   │   ├── env.ts · env-schema.ts  # Zod-validated environment; fails fast
 │   │   ├── db.ts                   # Prisma client singleton (server-only)
 │   │   ├── prisma-client.ts        # client factory shared by db.ts, seed and tests
@@ -108,7 +110,7 @@ madhuyamini/
 │   ├── generated/prisma/           # Prisma client output (git-ignored; `prisma generate`)
 │   ├── lib/                        # isomorphic pure helpers: money (paise ↔ ₹), routes, cx, validation, image-loader
 │   ├── styles/                     # reset.css · tokens.css · globals.css · fonts.ts
-│   └── proxy.ts                    # optimistic redirects only; never the sole authorisation check
+│   └── proxy.ts                    # /account/* cookie-presence redirect only; never the sole check
 ├── tests/
 │   ├── integration/                # Vitest against a real PostgreSQL test database (name must end in _test)
 │   └── stubs/server-only.ts        # replaces `server-only` under Vitest

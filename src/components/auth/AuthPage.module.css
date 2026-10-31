@@ -1,0 +1,16 @@
+.page {
+  display: grid;
+  gap: var(--space-5);
+  justify-items: start;
+  max-width: calc(32rem + 2 * var(--gutter));
+  padding-block: var(--space-8) var(--section-padding);
+}
+
+.title {
+  font-size: var(--text-3xl);
+}
+
+.intro {
+  max-width: var(--measure);
+  color: var(--text-secondary);
+}

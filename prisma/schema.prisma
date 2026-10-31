@@ -79,24 +79,99 @@ enum ReviewStatus {
 // Customers
 // ---------------------------------------------------------------------------
 
+/// Customers and staff. Better Auth owns sign-in; this app owns `role`,
+/// `phone` and everything below. Password hashes live in Account.password.
 model User {
-  id              String    @id @default(uuid(7)) @db.Uuid
+  id            String   @id @default(uuid(7)) @db.Uuid
   /// Stored lower-cased and trimmed; lookups normalise the same way.
-  email           String    @unique
-  emailVerifiedAt DateTime? @map("email_verified_at")
-  /// Argon2id hash (Phase 4). Null allows passwordless or social sign-in.
-  passwordHash    String?   @map("password_hash")
-  name            String
-  /// E.164, e.g. +919876543210
-  phone           String?
-  role            UserRole  @default(CUSTOMER)
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
+  email         String   @unique
+  emailVerified Boolean  @default(false) @map("email_verified")
+  name          String
+  image         String?
+  /// E.164, e.g. +919876543210. Optional at registration (P2).
+  phone         String?
+  /// Never accepted from client input; changed only by admin tooling (Phase 7).
+  role          UserRole @default(CUSTOMER)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   addresses Address[]
   reviews   Review[]
+  sessions  Session[]
+  accounts  Account[]
 
   @@map("users")
+}
+
+/// Better Auth session. The cookie carries `token`; sessions are revocable
+/// individually or all at once. No IP addresses are recorded (privacy).
+model Session {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+/// Better Auth account: one sign-in method per row. Email/password uses
+/// providerId "credential" and stores the password hash here.
+model Account {
+  id                    String    @id @default(uuid(7)) @db.Uuid
+  userId                String    @map("user_id") @db.Uuid
+  providerId            String    @map("provider_id")
+  accountId             String    @map("account_id")
+  accessToken           String?   @map("access_token")
+  refreshToken          String?   @map("refresh_token")
+  idToken               String?   @map("id_token")
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at")
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at")
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+/// Better Auth verification records (email verification, password reset).
+/// `value` holds a hashed or random token; rows are single-use and expire.
+model Verification {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  identifier String
+  value      String
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([identifier])
+  @@index([expiresAt])
+  @@map("verifications")
+}
+
+/// Fixed-window counters (D5). Shared by Better Auth's HTTP rate limiter and
+/// the application's own limits on sign-in, registration, reset and
+/// verification. `lastRequest` is the window start in epoch milliseconds.
+model RateLimit {
+  id          String @id @default(uuid(7)) @db.Uuid
+  key         String @unique
+  count       Int
+  lastRequest BigInt @map("last_request")
+
+  @@index([lastRequest])
+  @@map("rate_limits")
 }
 
 /// Address book. Orders copy the address at purchase time (Phase 6), so edits

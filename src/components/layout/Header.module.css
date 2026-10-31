@@ -58,7 +58,7 @@
     display: block;
   }
 
-  .iconLink {
+  .iconLink:not([data-account]) {
     display: none;
   }
 

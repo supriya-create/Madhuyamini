@@ -72,5 +72,6 @@ Variables are validated at startup in `src/server/env-schema.ts`.
 - [Roadmap and phase status](docs/roadmap.md)
 - [Architecture and decisions](docs/architecture.md)
 - [Data model](docs/data-model.md)
+- [Authentication and accounts](docs/auth.md)
 - [Design system](docs/design-system.md)
 - [Engineering rules](CLAUDE.md)

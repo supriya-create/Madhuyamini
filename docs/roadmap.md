@@ -1,6 +1,6 @@
 # Madhuyamini — Roadmap
 
-Status: **Phases 1–3 implemented (31 Oct 2026).** Brand inputs (D2) are still outstanding; Phase 3 awaits owner review.
+Status: **Phases 1–4 implemented (31 Oct 2026).** Brand inputs (D2) are still outstanding; Phase 4 awaits owner review.
 
 Related: [architecture.md](architecture.md) · [design-system.md](design-system.md). Decision IDs (D1–D9) refer to architecture.md §7.
 
@@ -271,6 +271,50 @@ Fixes made because tests caught them: pagination links dropped the page size; `p
 - **Price sort uses a correlated subquery** over active variants. Fine at catalogue scale; revisit with a denormalised minimum price if listings grow large (Phase 10).
 - **Catalog pages are dynamic** (D10): no caching yet; measured and tagged caching comes with admin edits (Phase 7) and hardening (Phase 10).
 - **No product images exist** (D2), so the gallery's multi-image behaviour is covered by unit tests of the loader and by component structure only, not by e2e.
+
+---
+
+## Phase 4 — Authentication and customer accounts
+
+Approved 31 Oct 2026 with Better Auth (D3), PostgreSQL rate limits (D5) and policies P1–P5; design and implementation notes in [auth.md](auth.md).
+
+### Checklist
+
+- [x] Pre-implementation verification of Better Auth against Next 16, Prisma 7.10 and the existing `User` model (`tests/integration/auth.test.ts`, 13 checks)
+- [x] Migration 4 with `rollback.sql` (exercised), zero drift
+- [x] Better Auth instance: email/password, verification (24 h), reset (30 min, revokes all), change (rotates session), 14-day idle sessions, 30-day absolute cap, no IP storage, server-owned `role`/`phone`, HTTP surface closed except the verification link
+- [x] Password policy (P3): 10–128 chars, not your email/name, predictable/common list, optional HIBP fail-open check
+- [x] PostgreSQL rate limits (D5) per IP and hashed email for sign-in, registration, reset and verification; cleanup function
+- [x] Email module: file/log/Resend transports, text + HTML templates; Resend required in production but checked at send time (requirement 6)
+- [x] Server Actions for register, sign in, sign out, forgot, reset, resend verification; generic enumeration-safe responses
+- [x] Identity data-access layer (`getCurrentUser`, `requireUser`, `requireRole`); `proxy.ts` optimistic redirect only
+- [x] Pages: `/login`, `/register`, `/forgot-password`, `/reset-password`, `/verify-email`, `/account` (overview with verification nudge), `/account/profile`, `/account/addresses` (list, add, edit, delete, default), `/account/security` (change password, devices, sign out everywhere)
+- [x] Header shows Sign in / Your account
+- [ ] Newsletter with an auditable consent record (P5) — still outstanding from Phase 2
+- [ ] Email change, account deletion/export (DPDP) — Phase 8/10
+- [ ] Admin role assignment with session revocation — Phase 7
+
+### Results (31 Oct 2026)
+
+| Gate                       | Result                                                                                                                                                                                                                                                                                                          |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run typecheck`        | Clean                                                                                                                                                                                                                                                                                                           |
+| `npm run lint`             | 0 problems                                                                                                                                                                                                                                                                                                      |
+| `npm run format:check`     | Clean                                                                                                                                                                                                                                                                                                           |
+| `npm test` (unit)          | 112 passed (password policy, rate-limit arithmetic, schemas, email templates, env)                                                                                                                                                                                                                              |
+| `npm run test:integration` | 71 passed, including the 13-check Better Auth probe, rate limiter atomicity, address ownership (IDOR) and reservations                                                                                                                                                                                          |
+| `npm run build`            | Succeeds (inside the e2e step)                                                                                                                                                                                                                                                                                  |
+| `npm run test:e2e`         | 217 passed, 19 skipped by design: registration → emailed link → sign-in, duplicate registration, predictable password, wrong password, return path, sign-out, header state, reset flow, profile, addresses, password change with device sign-out, keyboard and show-password, axe on all auth and account pages |
+| Migration 4                | Applied on both local databases; `rollback.sql` exercised and re-applied; zero drift                                                                                                                                                                                                                            |
+
+Fixes made because tests caught them: Better Auth's rate-limit table needs its own `id`; the raw rate-limit upsert must supply an id (Prisma's `uuid(7)` default is client-side); the password-change action must redirect after rotating the session, otherwise the re-render still carries the revoked cookie; verification links return to the sign-in page with a notice because registration no longer signs in. Test-side: each e2e test now sends its own `x-forwarded-for`, which also demonstrates the per-IP registration limit (shared addresses were blocked after five sign-ups).
+
+### Known issues and follow-ups
+
+- **Dev server must be restarted after `prisma generate`:** Better Auth inspects the Prisma client's model metadata at startup, so a long-running `next dev` keeps the old client and reports "Prisma schema mismatch" until restarted.
+- **Reset links in email are app URLs** (`/reset-password?token=…`); Better Auth's default link to its own API is not used, which keeps the HTTP surface closed.
+- **Expired session and rate-limit rows** are not yet swept on a schedule; `cleanupRateLimits()` exists and the cron arrives in Phase 6.
+- **`npm audit`** continues to report only the dev-only ESLint 9 advisories; Better Auth added no vulnerabilities.
 
 ---
 

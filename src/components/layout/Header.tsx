@@ -1,4 +1,4 @@
-import { Search } from "lucide-react";
+import { Search, UserRound } from "lucide-react";
 import Link from "next/link";
 
 import { SearchForm } from "@/components/catalog/SearchForm";
@@ -7,6 +7,7 @@ import { navExtras } from "@/content/navigation";
 import type { NavCategory } from "@/content/navigation";
 import { site } from "@/content/site";
 import { getCategoryTree } from "@/features/catalog/service";
+import { getCurrentUser } from "@/server/auth/current-user";
 import type { CategoryNode } from "@/features/catalog/types";
 import { routes } from "@/lib/routes";
 
@@ -29,7 +30,8 @@ function toNavCategory(node: CategoryNode): NavCategory {
 }
 
 export async function Header() {
-  const categories = (await getCategoryTree()).map(toNavCategory);
+  const [tree, user] = await Promise.all([getCategoryTree(), getCurrentUser()]);
+  const categories = tree.map(toNavCategory);
 
   return (
     <header className={styles.header}>
@@ -56,7 +58,17 @@ export async function Header() {
             <Icon icon={Search} size={24} />
             <span className="visually-hidden">Search</span>
           </Link>
-          {/* Account, wishlist and cart are added here as those features ship. */}
+          <Link
+            href={user ? routes.account : routes.login}
+            className={styles.iconLink}
+            data-account
+          >
+            <Icon icon={UserRound} size={24} />
+            <span className="visually-hidden">
+              {user ? "Your account" : "Sign in"}
+            </span>
+          </Link>
+          {/* Wishlist and cart are added here as those features ship. */}
         </div>
       </div>
       <DesktopNav categories={categories} extras={navExtras} />

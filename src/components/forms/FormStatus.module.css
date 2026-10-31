@@ -1,0 +1,23 @@
+.status {
+  padding: var(--space-3) var(--space-4);
+  border-inline-start: 3px solid var(--color-indigo);
+  background-color: var(--color-cream);
+}
+
+.status[data-status="error"] {
+  border-inline-start-color: var(--color-error);
+}
+
+.status[data-status="success"] {
+  border-inline-start-color: var(--color-leaf);
+}
+
+.message {
+  font-weight: 500;
+}
+
+.list {
+  margin-block-start: var(--space-2);
+  padding-inline-start: var(--space-5);
+  font-size: var(--text-sm);
+}

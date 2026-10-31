@@ -9,9 +9,9 @@ export const testDb = createPrismaClient(resolveTestDatabaseUrl());
 export async function resetDatabase(): Promise<void> {
   await testDb.$executeRaw`
     TRUNCATE TABLE
-      reviews, inventory, product_variant_values, product_variants,
+      reviews, inventory_reservations, inventory, product_variant_values, product_variants,
       product_option_values, product_options, product_images, products,
-      categories, addresses, users
+      categories, addresses, sessions, accounts, verifications, rate_limits, users
     RESTART IDENTITY CASCADE
   `;
 }

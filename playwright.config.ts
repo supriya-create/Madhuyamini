@@ -1,6 +1,15 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { defineConfig, devices } from "@playwright/test";
 
 const PORT = 3100;
+/** Emails from the server under test are captured here and read by e2e/auth.spec.ts. */
+const MAIL_DIR =
+  process.env.E2E_MAIL_DIR ??
+  mkdtempSync(join(tmpdir(), "madhuyamini-e2e-mail-"));
+process.env.E2E_MAIL_DIR = MAIL_DIR;
 const baseURL = `http://localhost:${PORT}`;
 const isCI = Boolean(process.env.CI);
 
@@ -34,6 +43,11 @@ export default defineConfig({
     url: baseURL,
     reuseExistingServer: false,
     timeout: 240_000,
-    env: { SITE_ENV: "development" },
+    env: {
+      SITE_ENV: "development",
+      EMAIL_TRANSPORT: "file",
+      EMAIL_OUTBOX_DIR: MAIL_DIR,
+      PASSWORD_BREACH_CHECK: "off",
+    },
   },
 });

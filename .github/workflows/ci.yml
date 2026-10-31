@@ -36,6 +36,9 @@ jobs:
       SITE_ENV: development
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/madhuyamini
       TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/madhuyamini_test
+      # Not a real secret: CI databases are throwaway. Production uses its own value.
+      BETTER_AUTH_SECRET: ci-only-secret-value-that-is-at-least-32-chars
+      EMAIL_TRANSPORT: file
     steps:
       # Actions are pinned to commit SHAs (tag in the comment) to protect the pipeline from tag moves.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

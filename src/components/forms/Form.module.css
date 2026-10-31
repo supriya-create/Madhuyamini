@@ -1,0 +1,34 @@
+.form {
+  display: grid;
+  gap: var(--space-5);
+  max-width: 28rem;
+}
+
+.formWide {
+  display: grid;
+  gap: var(--space-5);
+  max-width: 40rem;
+}
+
+.row {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-5);
+}
+
+.footnote {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+@media (min-width: 30em) {
+  .row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
