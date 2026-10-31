@@ -1,0 +1,11 @@
+.wrapper {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.noscript {
+  padding: var(--space-3) var(--space-4);
+  border-inline-start: 3px solid var(--color-warning);
+  background-color: var(--color-cream);
+  font-size: var(--text-sm);
+}

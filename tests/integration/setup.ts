@@ -13,3 +13,6 @@ process.env.BETTER_AUTH_SECRET ??= "integration-test-secret-at-least-32-chars";
 process.env.EMAIL_TRANSPORT = "file";
 process.env.EMAIL_OUTBOX_DIR = mkdtempSync(join(tmpdir(), "madhuyamini-mail-"));
 process.env.PASSWORD_BREACH_CHECK = "off";
+// Owner notifications and operations alerts go to this inbox in tests.
+process.env.ORDER_NOTIFY_EMAIL = "owner@example.com";
+process.env.CRON_SECRET = "integration-cron-secret-value";

@@ -80,6 +80,14 @@ export function findActiveGuestCart(
   });
 }
 
+/** Any cart by id, whatever its status; callers verify ownership (checkout resume). */
+export function findCartById(cartId: string, tx: Tx = db) {
+  return tx.cart.findUnique({
+    where: { id: cartId },
+    select: { ...cartSelect, tokenHash: true },
+  });
+}
+
 export function createUserCart(userId: string, tx: Tx = db) {
   return tx.cart.create({ data: { userId }, select: cartSelect });
 }

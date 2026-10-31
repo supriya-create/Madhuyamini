@@ -37,9 +37,11 @@ export default defineConfig({
     { name: "mobile-webkit", use: { ...devices["iPhone 15"] } },
   ],
   webServer: {
+    // The seed is idempotent and resets fixture stock, so checkout journeys
+    // start from known quantities on every run.
     command: process.env.E2E_SKIP_BUILD
-      ? `npm run start -- --port ${PORT}`
-      : `npm run build && npm run start -- --port ${PORT}`,
+      ? `npm run db:seed && npm run start -- --port ${PORT}`
+      : `npm run db:seed && npm run build && npm run start -- --port ${PORT}`,
     url: baseURL,
     reuseExistingServer: false,
     timeout: 240_000,
@@ -50,6 +52,9 @@ export default defineConfig({
       EMAIL_TRANSPORT: "file",
       EMAIL_OUTBOX_DIR: MAIL_DIR,
       PASSWORD_BREACH_CHECK: "off",
+      // Phase 6: the in-process fake gateway and the job routes (e2e/checkout.spec.ts).
+      PAYMENT_GATEWAY: "fake",
+      CRON_SECRET: "e2e-cron-secret-value",
     },
   },
 });

@@ -12,7 +12,9 @@ export async function resetDatabase(): Promise<void> {
       reviews, inventory_reservations, inventory, product_variant_values, product_variants,
       product_option_values, product_options, product_images, products,
       categories, addresses, sessions, accounts, verifications, rate_limits,
-      cart_items, carts, wishlist_items, users
+      cart_items, carts, wishlist_items,
+      notification_outbox, order_events, payment_webhook_events, order_access_tokens,
+      refunds, payments, order_items, orders, users
     RESTART IDENTITY CASCADE
   `;
 }

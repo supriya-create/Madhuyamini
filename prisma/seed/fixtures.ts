@@ -219,7 +219,8 @@ export const productFixtures: readonly ProductFixture[] = [
     status: "ACTIVE",
     isFeatured: true,
     variants: [
-      { sku: "MY-SAMPLE-0007", priceInPaise: 129_900, stockOnHand: 12 },
+      // Deep stock on purpose: the checkout e2e journeys buy this one.
+      { sku: "MY-SAMPLE-0007", priceInPaise: 129_900, stockOnHand: 200 },
     ],
   },
   {

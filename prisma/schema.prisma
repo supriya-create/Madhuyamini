@@ -110,6 +110,7 @@ model User {
   accounts      Account[]
   carts         Cart[]
   wishlistItems WishlistItem[]
+  orders        Order[]
 
   @@map("users")
 }
@@ -341,6 +342,7 @@ model ProductVariant {
   optionValues ProductVariantValue[]
   images       ProductImage[]
   cartItems    CartItem[]
+  orderItems   OrderItem[]
 
   @@index([productId, position])
   @@map("product_variants")
@@ -390,9 +392,13 @@ model InventoryReservation {
   closedAt  DateTime?         @map("closed_at")
   createdAt DateTime          @default(now()) @map("created_at")
   updatedAt DateTime          @updatedAt @map("updated_at")
+  /// The order holding this stock (Phase 6). Nullable so holds from other flows stay valid.
+  orderId   String?           @map("order_id") @db.Uuid
 
   inventory Inventory @relation(fields: [variantId], references: [variantId], onDelete: Restrict)
+  order     Order?    @relation(fields: [orderId], references: [id], onDelete: Restrict)
 
+  @@unique([orderId, variantId])
   @@index([status, expiresAt])
   @@index([variantId, status])
   @@map("inventory_reservations")
@@ -416,8 +422,9 @@ model Cart {
   createdAt      DateTime   @default(now()) @map("created_at")
   updatedAt      DateTime   @updatedAt @map("updated_at")
 
-  user  User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  items CartItem[]
+  user   User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items  CartItem[]
+  orders Order[]
 
   @@unique([userId], map: "carts_one_active_per_user", where: { status: "ACTIVE" })
   @@index([status, expiresAt])
@@ -481,4 +488,315 @@ model Review {
   @@unique([productId, userId])
   @@index([productId, status])
   @@map("reviews")
+}
+
+// ---------------------------------------------------------------------------
+// Orders and payments (Phase 6). Design: docs/checkout.md.
+// ---------------------------------------------------------------------------
+
+/// Phase 7/8 append fulfilment states (PROCESSING, SHIPPED, DELIVERED, RETURNED).
+enum OrderStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  CANCELLED
+  NEEDS_REVIEW
+
+  @@map("order_status")
+}
+
+enum CancellationReason {
+  PAYMENT_FAILED
+  PAYMENT_TIMEOUT
+  CUSTOMER
+  STOCK_UNAVAILABLE
+  ADMIN
+
+  @@map("cancellation_reason")
+}
+
+enum PaymentMethod {
+  RAZORPAY
+  COD
+
+  @@map("payment_method")
+}
+
+/// INITIATED: our intent row exists and no provider order yet; CREATED: the
+/// provider order id is persisted. Transitions: src/features/orders/transitions.ts.
+enum PaymentStatus {
+  INITIATED
+  CREATED
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  REFUNDED
+
+  @@map("payment_status")
+}
+
+enum RefundStatus {
+  INITIATED
+  REQUESTED
+  PROCESSED
+  FAILED
+
+  @@map("refund_status")
+}
+
+enum OrderActor {
+  CUSTOMER
+  SYSTEM
+  WEBHOOK
+  CRON
+  ADMIN
+
+  @@map("order_actor")
+}
+
+enum WebhookStatus {
+  RECEIVED
+  PROCESSED
+  IGNORED
+  FAILED
+
+  @@map("webhook_status")
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+
+  @@map("notification_status")
+}
+
+/// A purchase. Amounts are integer paise computed on the server; the address
+/// is copied at placement so later edits never change history.
+model Order {
+  id                 String              @id @default(uuid(7)) @db.Uuid
+  orderNumber        String              @unique @map("order_number")
+  /// Null for guests; guest access goes through OrderAccessToken.
+  userId             String?             @map("user_id") @db.Uuid
+  /// Lower-cased.
+  email              String
+  /// E.164.
+  phone              String
+  status             OrderStatus         @default(PENDING_PAYMENT)
+  paymentMethod      PaymentMethod       @map("payment_method")
+  currency           String              @default("INR")
+  subtotalInPaise    Int                 @map("subtotal_in_paise")
+  shippingInPaise    Int                 @map("shipping_in_paise")
+  codFeeInPaise      Int                 @default(0) @map("cod_fee_in_paise")
+  discountInPaise    Int                 @default(0) @map("discount_in_paise")
+  totalInPaise       Int                 @map("total_in_paise")
+  /// Tax included in the total, informational; null while no product carries a rate.
+  taxInPaise         Int?                @map("tax_in_paise")
+  recipientName      String              @map("recipient_name")
+  addressLine1       String              @map("address_line1")
+  addressLine2       String?             @map("address_line2")
+  landmark           String?
+  city               String
+  state              String
+  postalCode         String              @map("postal_code")
+  country            String              @default("IN")
+  customerNote       String?             @map("customer_note")
+  cartId             String?             @map("cart_id") @db.Uuid
+  /// Online orders: the reservation deadline. Null for COD.
+  pendingExpiresAt   DateTime?           @map("pending_expires_at")
+  /// How many times the deadline was extended by a new attempt (policy.reservation.maxExtensions).
+  deadlineExtensions Int                 @default(0) @map("deadline_extensions")
+  confirmedAt        DateTime?           @map("confirmed_at")
+  cancelledAt        DateTime?           @map("cancelled_at")
+  cancellationReason CancellationReason? @map("cancellation_reason")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+
+  user          User?                  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  cart          Cart?                  @relation(fields: [cartId], references: [id], onDelete: SetNull)
+  items         OrderItem[]
+  payments      Payment[]
+  refunds       Refund[]
+  accessTokens  OrderAccessToken[]
+  reservations  InventoryReservation[]
+  events        OrderEvent[]
+  notifications NotificationOutbox[]
+
+  /// Placement idempotency: one live order per cart (docs/checkout.md §5.7).
+  @@unique([cartId], map: "orders_one_live_per_cart", where: raw("status <> 'CANCELLED'::order_status"))
+  @@index([userId, createdAt])
+  @@index([status, pendingExpiresAt])
+  @@index([email])
+  @@map("orders")
+}
+
+/// Immutable snapshot of what was bought, at the price it was bought.
+model OrderItem {
+  id               String  @id @default(uuid(7)) @db.Uuid
+  orderId          String  @map("order_id") @db.Uuid
+  variantId        String  @map("variant_id") @db.Uuid
+  productSlug      String  @map("product_slug")
+  productTitle     String  @map("product_title")
+  variantTitle     String? @map("variant_title")
+  sku              String
+  quantity         Int
+  unitPriceInPaise Int     @map("unit_price_in_paise")
+  lineTotalInPaise Int     @map("line_total_in_paise")
+  taxRateBp        Int?    @map("tax_rate_bp")
+  hsnCode          String? @map("hsn_code")
+  imageUrl         String? @map("image_url")
+  imageAlt         String? @map("image_alt")
+
+  order   Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  /// Sold variants are archived, never deleted.
+  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+
+  @@unique([orderId, variantId])
+  @@map("order_items")
+}
+
+/// One row per payment attempt, written before the provider is called and
+/// carrying the `receipt` the provider stores, so a lost response is recoverable.
+model Payment {
+  id                  String        @id @default(uuid(7)) @db.Uuid
+  orderId             String        @map("order_id") @db.Uuid
+  attemptNo           Int           @map("attempt_no")
+  method              PaymentMethod
+  status              PaymentStatus @default(INITIATED)
+  amountInPaise       Int           @map("amount_in_paise")
+  currency            String        @default("INR")
+  /// `${orderNumber}-${attemptNo}`; unique at Razorpay as well (≤ 40 ASCII chars).
+  receipt             String        @unique
+  providerOrderId     String?       @unique @map("provider_order_id")
+  providerPaymentId   String?       @unique @map("provider_payment_id")
+  signatureVerifiedAt DateTime?     @map("signature_verified_at")
+  providerAttempts    Int           @default(0) @map("provider_attempts")
+  lastError           String?       @map("last_error")
+  authorizedAt        DateTime?     @map("authorized_at")
+  capturedAt          DateTime?     @map("captured_at")
+  failedAt            DateTime?     @map("failed_at")
+  failureCode         String?       @map("failure_code")
+  failureDescription  String?       @map("failure_description")
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
+
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  refunds Refund[]
+
+  @@unique([orderId, attemptNo])
+  /// One open attempt at a time (docs/checkout.md §5.7).
+  @@unique([orderId], map: "payments_one_open_per_order", where: raw("status = ANY (ARRAY['INITIATED'::payment_status, 'CREATED'::payment_status, 'AUTHORIZED'::payment_status])"))
+  @@index([orderId, createdAt])
+  @@map("payments")
+}
+
+/// Refund intent and outcome. Written in the transaction that decided it; the
+/// provider call happens later from the refund-payments job.
+model Refund {
+  id               String       @id @default(uuid(7)) @db.Uuid
+  orderId          String       @map("order_id") @db.Uuid
+  paymentId        String       @map("payment_id") @db.Uuid
+  status           RefundStatus @default(INITIATED)
+  amountInPaise    Int          @map("amount_in_paise")
+  reason           String
+  /// Sent to the provider as `receipt` and in notes, so an unanswered request can be found again.
+  reference        String       @unique
+  providerRefundId String?      @unique @map("provider_refund_id")
+  attempts         Int          @default(0)
+  nextAttemptAt    DateTime     @default(now()) @map("next_attempt_at")
+  claimedAt        DateTime?    @map("claimed_at")
+  claimedBy        String?      @map("claimed_by")
+  lastError        String?      @map("last_error")
+  requestedAt      DateTime?    @map("requested_at")
+  processedAt      DateTime?    @map("processed_at")
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt])
+  @@map("refunds")
+}
+
+/// Guest access to one order: SHA-256 of a random 256-bit cookie token.
+model OrderAccessToken {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  orderId    String    @map("order_id") @db.Uuid
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at")
+  lastUsedAt DateTime? @map("last_used_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([expiresAt])
+  @@map("order_access_tokens")
+}
+
+/// Every webhook delivery, keyed by the provider's event id: the idempotency
+/// ledger and the retry queue for applying it.
+model PaymentWebhookEvent {
+  id                String        @id
+  eventType         String        @map("event_type")
+  status            WebhookStatus @default(RECEIVED)
+  providerOrderId   String?       @map("provider_order_id")
+  providerPaymentId String?       @map("provider_payment_id")
+  orderId           String?       @map("order_id") @db.Uuid
+  payload           Json
+  attempts          Int           @default(0)
+  nextAttemptAt     DateTime      @default(now()) @map("next_attempt_at")
+  claimedAt         DateTime?     @map("claimed_at")
+  claimedBy         String?       @map("claimed_by")
+  lastError         String?       @map("last_error")
+  receivedAt        DateTime      @default(now()) @map("received_at")
+  processedAt       DateTime?     @map("processed_at")
+
+  @@index([status, nextAttemptAt])
+  @@index([providerPaymentId])
+  @@map("payment_webhook_events")
+}
+
+/// Append-only timeline. Application code never updates or deletes rows.
+model OrderEvent {
+  id         String       @id @default(uuid(7)) @db.Uuid
+  orderId    String       @map("order_id") @db.Uuid
+  type       String
+  actor      OrderActor
+  fromStatus OrderStatus? @map("from_status")
+  toStatus   OrderStatus? @map("to_status")
+  note       String?
+  data       Json?
+  createdAt  DateTime     @default(now()) @map("created_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+  @@map("order_events")
+}
+
+/// Durable email queue, written in the same transaction as the state it announces.
+model NotificationOutbox {
+  id            String             @id @default(uuid(7)) @db.Uuid
+  kind          String
+  /// `${kind}:${orderId}`: one email per fact, and the provider idempotency key.
+  dedupeKey     String             @unique @map("dedupe_key")
+  orderId       String?            @map("order_id") @db.Uuid
+  recipient     String
+  /// Everything the template needs, captured at enqueue time.
+  payload       Json
+  status        NotificationStatus @default(PENDING)
+  attempts      Int                @default(0)
+  nextAttemptAt DateTime           @default(now()) @map("next_attempt_at")
+  claimedAt     DateTime?          @map("claimed_at")
+  claimedBy     String?            @map("claimed_by")
+  lastError     String?            @map("last_error")
+  sentAt        DateTime?          @map("sent_at")
+  createdAt     DateTime           @default(now()) @map("created_at")
+
+  order Order? @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt])
+  @@map("notification_outbox")
 }

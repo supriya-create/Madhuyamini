@@ -33,7 +33,10 @@ export default async function AccountPage({
 
       <div className={shellStyles.panel}>
         <h2 className={shellStyles.panelTitle}>Orders</h2>
-        <p>Your orders will appear here once the shop opens for purchases.</p>
+        <p>
+          <Link href={routes.accountOrders}>See your orders</Link> and their
+          progress.
+        </p>
       </div>
 
       <div className={shellStyles.panel}>

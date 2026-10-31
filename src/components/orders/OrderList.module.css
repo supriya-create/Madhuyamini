@@ -1,0 +1,55 @@
+.list {
+  display: grid;
+  gap: var(--space-3);
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2) var(--space-4);
+  align-items: center;
+  padding: var(--space-4);
+  border: 1px solid var(--rule);
+  background-color: var(--color-ivory);
+}
+
+.summary {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.number a {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.meta {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.total {
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+.status {
+  font-size: var(--text-sm);
+  color: var(--color-leaf);
+}
+
+.status[data-status="PENDING_PAYMENT"],
+.status[data-status="NEEDS_REVIEW"] {
+  color: var(--color-warning);
+}
+
+.status[data-status="CANCELLED"] {
+  color: var(--text-muted);
+}
+
+.pay {
+  justify-self: end;
+  font-weight: 500;
+}

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    { "path": "/api/cron/expire-reservations", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/recover-payments", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/process-webhooks", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/send-notifications", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/reconcile-payments", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/refund-payments", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/cleanup", "schedule": "0 3 * * *" }
+  ]
+}

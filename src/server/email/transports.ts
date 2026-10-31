@@ -57,6 +57,9 @@ export function resendTransport(apiKey: string | null): EmailTransport {
         headers: {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
+          ...(message.idempotencyKey
+            ? { "Idempotency-Key": message.idempotencyKey }
+            : {}),
         },
         body: JSON.stringify({
           from: message.from,

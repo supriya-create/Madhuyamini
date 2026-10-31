@@ -1,0 +1,5 @@
+.status {
+  padding: var(--space-3) var(--space-4);
+  border-inline-start: 3px solid var(--color-leaf);
+  background-color: var(--color-cream);
+}

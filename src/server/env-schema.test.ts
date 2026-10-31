@@ -187,3 +187,91 @@ describe("database, auth and email settings", () => {
     );
   });
 });
+
+describe("payments, cron and notification settings", () => {
+  it("defaults to the fake gateway outside production and Razorpay in production", () => {
+    expect(parseEnv(withDb({})).payments).toEqual({
+      gateway: "fake",
+      razorpay: null,
+    });
+    const production = parseEnv(
+      withDb({
+        SITE_ENV: "production",
+        SITE_URL: "https://madhuyamini.example",
+      }),
+    );
+    // Missing keys do not fail parsing (and so not the build); they fail at use.
+    expect(production.payments).toEqual({
+      gateway: "razorpay",
+      razorpay: null,
+    });
+    expect(production.cronSecret).toBeNull();
+    expect(production.notifications.ownerEmail).toBeNull();
+  });
+
+  it("refuses the fake gateway in production", () => {
+    expect(() =>
+      parseEnv(
+        withDb({
+          SITE_ENV: "production",
+          SITE_URL: "https://madhuyamini.example",
+          PAYMENT_GATEWAY: "fake",
+        }),
+      ),
+    ).toThrow(/PAYMENT_GATEWAY/);
+  });
+
+  it("assembles the Razorpay configuration only when both keys are present", () => {
+    expect(
+      parseEnv(withDb({ RAZORPAY_KEY_ID: "rzp_test_abc" })).payments.razorpay,
+    ).toBeNull();
+    const env = parseEnv(
+      withDb({
+        PAYMENT_GATEWAY: "razorpay",
+        RAZORPAY_KEY_ID: "rzp_test_abc",
+        RAZORPAY_KEY_SECRET: "topsecretkey",
+        RAZORPAY_WEBHOOK_SECRET: "whsec-now",
+        RAZORPAY_WEBHOOK_SECRET_PREVIOUS: "whsec-before",
+      }),
+    );
+    expect(env.payments).toEqual({
+      gateway: "razorpay",
+      razorpay: {
+        keyId: "rzp_test_abc",
+        keySecret: "topsecretkey",
+        webhookSecrets: ["whsec-now", "whsec-before"],
+      },
+    });
+    expect(
+      parseEnv(
+        withDb({
+          RAZORPAY_KEY_ID: "rzp_test_abc",
+          RAZORPAY_KEY_SECRET: "topsecretkey",
+        }),
+      ).payments.razorpay?.webhookSecrets,
+    ).toEqual([]);
+  });
+
+  it("validates the cron secret and the owner inbox without echoing them", () => {
+    expect(parseEnv(withDb({ CRON_SECRET: "c".repeat(16) })).cronSecret).toBe(
+      "c".repeat(16),
+    );
+    try {
+      parseEnv(withDb({ CRON_SECRET: "tooshortcron" }));
+      expect.unreachable("should have thrown");
+    } catch (error) {
+      expect(String(error)).toMatch(/CRON_SECRET/);
+      expect(String(error)).not.toContain("tooshortcron");
+    }
+    expect(
+      parseEnv(withDb({ ORDER_NOTIFY_EMAIL: "orders@madhuyamini.example" }))
+        .notifications.ownerEmail,
+    ).toBe("orders@madhuyamini.example");
+    expect(() =>
+      parseEnv(withDb({ ORDER_NOTIFY_EMAIL: "not-an-email" })),
+    ).toThrow(/ORDER_NOTIFY_EMAIL/);
+    expect(() => parseEnv(withDb({ PAYMENT_GATEWAY: "paypal" }))).toThrow(
+      /PAYMENT_GATEWAY/,
+    );
+  });
+});

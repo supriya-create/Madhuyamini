@@ -1,6 +1,6 @@
 # Madhuyamini — Checkout and Payments (Phase 6)
 
-Status: **Proposed, awaiting approval** · 31 Oct 2026, revised 1 Nov 2026 · Nothing in this document has been implemented or tested.
+Status: **Implemented (Phase 6)** · proposed 31 Oct 2026, approved and built 1 Nov 2026. Sections 1–15 are the approved design; §16 records what was built and where it differs.
 
 Revision 2 incorporates the owner's seven refinements: no transaction spans a provider call (§5.6), durable recovery for late captures, refunds and webhooks (§5.6, §5.8), placement idempotency (§5.7), guest access tokens (§10.1), one policy configuration (§4.1), a full catalogue of transaction boundaries and lock order (§5.5), and worker-safe outbox and webhook processing (§5.8, §11.1).
 
@@ -752,3 +752,29 @@ Estimated size: comparable to Phases 4 and 5 together; steps 1–3 are the bulk 
 7. Confirmation emails are delivered at least once and at most once per fact, surviving a transport failure.
 8. axe reports zero violations on every checkout and order page; the full checkout is keyboard-operable and works without JavaScript.
 9. Phases 1–5 behaviour unchanged: the existing 131 unit, 101 integration and 249 e2e tests still pass unmodified (additions only).
+
+---
+
+## 16. Implementation notes (1 Nov 2026)
+
+Decisions as approved: D6 15-minute holds extended once by 15 minutes when a new attempt starts; D7a ₹99 shipping, free from a ₹1,999 subtotal; D7b cash on delivery up to ₹5,000 with no fee; D7c not GST-registered, so `taxInPaise` stays null and no tax line is shown (the schema and snapshots carry rates for later); P6–P12 as recommended.
+
+**Where the build differs from the design**
+
+| Design                                   | Built                                                                                                                                                                                                         |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `razorpay` SDK                           | Direct REST calls over `fetch` (`src/server/payments/razorpay.ts`): six endpoints, Basic auth, 10-second timeout, typed error mapping. No new runtime dependency.                                             |
+| `orders.accessTokenHash` column          | `order_access_tokens` table (several tokens per order, rotation, revocation, expiry).                                                                                                                         |
+| Payment state machine: `FAILED` terminal | `FAILED → CAPTURED` allowed: one provider order can carry several payment tries, so a capture after a recorded failure is honoured. `CAPTURED` is still never overwritten.                                    |
+| Mismatch keeps stock held                | Yes: a `NEEDS_REVIEW` order keeps its holds (nothing consumed or released) until Phase 7 tooling decides.                                                                                                     |
+| `payments` recovered by lease columns    | `payments` has no lease; `recover-payments` picks `INITIATED` attempts untouched for `policy.payment.reconcileAfterMinutes` and `ensureProviderOrder` is idempotent (T3 re-checks under the order lock).      |
+| Webhook retry only via the job           | The route applies inline right after storing (`SKIP LOCKED` on the ledger row) and the job catches what fails or is skipped; 200 is returned once stored, 401 on a bad signature, 500 only if storing failed. |
+| `after()` fast path for the outbox       | Not wired yet: emails leave through the send-notifications job (every 5 minutes in `vercel.json`); the job's `onlyId` option exists for the fast path.                                                        |
+| Reduced guest exposure by token purpose  | By time: guests see full details for `policy.guestAccess.fullDetailMinutes` (60) after placement, reduced afterwards; owners always see everything.                                                           |
+| Simulator for e2e                        | `PaymentSimulator` on the pay page when `PAYMENT_GATEWAY=fake`: captured, failed, authorised, and captured-without-callback (the e2e test then posts the webhook itself with the fake secret).                |
+
+**Transactions as built** map one-to-one onto §5.5: T1/T2 in `features/checkout/service.ts`, T3/T4 in `features/payments/service.ts` (`ensureProviderOrder`), T5/T6 in `features/payments/capture.ts`, T7/T15 in `features/orders/service.ts`, T8 in `server/jobs/expire-reservations.ts`, T9/T10 in `features/payments/webhook.ts`, T11 inside T5, T12 in `server/jobs/refund-payments.ts`, T13/T14 through `server/jobs/queue.ts`. Lock order is `carts → orders → payments/refunds → inventory (ascending variant id) → reservations`; no transaction awaits the network.
+
+**Files:** migration `20261101090000_orders_payments_and_outbox` (+ `rollback.sql`) · `src/config/checkout-policy.ts` · `src/features/{inventory,checkout,orders,payments}/*` · `src/server/payments/{gateway,signatures,fake,fake-secrets,razorpay,index}.ts` · `src/server/orders/{token,context}.ts` · `src/server/notifications/{outbox,service}.ts` · `src/server/jobs/*` · `src/app/api/webhooks/razorpay/route.ts` · `src/app/api/cron/[job]/route.ts` · `src/app/(storefront)/checkout/**`, `account/orders/**`, `orders/track` · `src/components/{checkout,orders}/*` · `scripts/run-job.ts` · `vercel.json`.
+
+**Still to do before go-live:** the Razorpay test-mode smoke (§15) with the owner's keys; Dashboard settings (auto-capture, webhook URL and secret, events `payment.captured`, `payment.failed`, `payment.authorized`, `order.paid`, `refund.processed`); policy pages (Phase 9); a scheduler that runs the jobs every few minutes (Vercel Pro or an external pinger).

@@ -26,6 +26,18 @@ export default async function CartPage({ searchParams }: PageProps<"/cart">) {
     <Container className={styles.page}>
       <h1 className={styles.heading}>Your cart</h1>
 
+      {query.issue === "availability" ? (
+        <p role="status" className={styles.notice}>
+          Some pieces became unavailable while you were checking out. They are
+          marked below; adjust or remove them to continue.
+        </p>
+      ) : null}
+      {query.order === "cancelled" ? (
+        <p role="status" className={styles.notice}>
+          Your order was cancelled and nothing has been charged. Your cart is
+          unchanged.
+        </p>
+      ) : null}
       {query.cart === "adjusted" ? (
         <p role="status" className={styles.notice}>
           We combined the cart you started as a guest with your account. Some

@@ -48,7 +48,7 @@ erDiagram
 | `role`                   | `CUSTOMER` / `STAFF` / `ADMIN` | Never accepted from client input.                                     |
 | `createdAt`, `updatedAt` |                                |                                                                       |
 
-Sign-in is handled by Better Auth (Phase 4): `sessions`, `accounts` (one row per sign-in method; the `credential` provider holds the password hash), `verifications` (email verification and reset tokens) and `rate_limits` (fixed-window counters shared with the application's own limiter). `User.emailVerified` is a boolean and the Phase 2 `passwordHash`/`emailVerifiedAt` columns were removed in migration 4. See [auth.md](auth.md).
+Orders, payments, refunds, guest order tokens, the webhook ledger, the order timeline and the notification outbox arrived in Phase 6 (migration 6); their fields, constraints and partial indexes are specified in [checkout.md](checkout.md) §3 and §16. `InventoryReservation` gained a nullable `orderId`. Sign-in is handled by Better Auth (Phase 4): `sessions`, `accounts` (one row per sign-in method; the `credential` provider holds the password hash), `verifications` (email verification and reset tokens) and `rate_limits` (fixed-window counters shared with the application's own limiter). `User.emailVerified` is a boolean and the Phase 2 `passwordHash`/`emailVerifiedAt` columns were removed in migration 4. See [auth.md](auth.md).
 
 ### Address
 

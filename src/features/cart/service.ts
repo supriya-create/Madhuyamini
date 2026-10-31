@@ -70,6 +70,7 @@ function toLineView(row: CartLineRow): CartLineView {
     id: row.id,
     quantity: row.quantity,
     product: {
+      id: row.variant.product.id,
       slug: row.variant.product.slug,
       title: row.variant.product.title,
       isOneOfAKind: row.variant.product.isOneOfAKind,
@@ -289,6 +290,10 @@ export async function mergeGuestCartIntoUser(
   return db.$transaction(async (tx) => {
     const guest = await data.findActiveGuestCart(tokenHash, now, tx);
     if (!guest) return { merged: false, lines: 0, adjusted: 0 };
+    // A cart with an order awaiting payment is the order's; leave it alone
+    // (docs/checkout.md §5.7). The pending order shows up under the account.
+    if (await hasLiveOrder(guest.id, tx))
+      return { merged: false, lines: 0, adjusted: 0 };
 
     const claimed = await data.claimGuestCartForMerge(guest.id, tx);
     if (claimed.count === 0) return { merged: false, lines: 0, adjusted: 0 };
@@ -297,6 +302,8 @@ export async function mergeGuestCartIntoUser(
       (await data.findActiveUserCart(userId, tx)) ??
       (await data.createUserCart(userId, tx));
     await data.lockCart(target.id, tx);
+    if (await hasLiveOrder(target.id, tx))
+      return { merged: false, lines: 0, adjusted: 0 };
 
     let adjusted = 0;
     for (const line of guest.items) {
@@ -330,6 +337,16 @@ export async function mergeGuestCartIntoUser(
     await data.touchCart(target.id, now, null, tx);
     return { merged: true, lines: guest.items.length, adjusted };
   });
+}
+
+async function hasLiveOrder(
+  cartId: string,
+  tx: Prisma.TransactionClient,
+): Promise<boolean> {
+  const count = await tx.order.count({
+    where: { cartId, status: { not: "CANCELLED" } },
+  });
+  return count > 0;
 }
 
 export const cleanupCarts = data.expireGuestCarts;

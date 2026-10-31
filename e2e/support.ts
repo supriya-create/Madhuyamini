@@ -19,11 +19,19 @@ export function tabKey(browserName: string): string {
 const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 
 export async function expectNoAxeViolations(page: Page, context?: string) {
+  // Target sizes depend on the final layout: wait for web fonts, and start
+  // from the top so the sticky header overlaps nothing being measured.
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    window.scrollTo(0, 0);
+  });
   const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
   const summary = results.violations.map((violation) => ({
     rule: violation.id,
     impact: violation.impact,
     targets: violation.nodes.map((node) => node.target.join(" ")),
+    // Why each node failed, so a report is actionable without re-running.
+    details: violation.nodes.map((node) => node.failureSummary ?? ""),
   }));
   expect(
     summary,

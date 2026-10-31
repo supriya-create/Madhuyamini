@@ -11,6 +11,17 @@ export type SiteEnv = z.infer<typeof siteEnvSchema>;
 
 export type EmailTransport = "file" | "log" | "resend";
 
+export type PaymentGatewayKind = "razorpay" | "fake";
+
+export interface RazorpayConfig {
+  /** Public key id, safe to render into the checkout page. */
+  readonly keyId: string;
+  /** Never log or expose it. */
+  readonly keySecret: string;
+  /** Current webhook secret first, then the previous one during rotation. */
+  readonly webhookSecrets: readonly string[];
+}
+
 export interface ServerEnv {
   /** Deployment stage. Controls indexing, development-only pages and placeholders. */
   readonly siteEnv: SiteEnv;
@@ -30,6 +41,18 @@ export interface ServerEnv {
   };
   /** Whether registration and password changes consult Have I Been Pwned. */
   readonly passwordBreachCheck: "hibp" | "off";
+  readonly payments: {
+    /** `fake` is refused in production; it backs development, tests and CI. */
+    readonly gateway: PaymentGatewayKind;
+    /** Null until both key id and secret are set; checked when a payment is attempted, not at build. */
+    readonly razorpay: RazorpayConfig | null;
+  };
+  /** Bearer secret the scheduled job routes require; null disables them. */
+  readonly cronSecret: string | null;
+  readonly notifications: {
+    /** Inbox that receives new-order and operations alerts (P10); null disables them. */
+    readonly ownerEmail: string | null;
+  };
 }
 
 const DEFAULT_SITE_URL = "http://localhost:3000";
@@ -78,6 +101,22 @@ const rawEnvSchema = z
     PASSWORD_BREACH_CHECK: optionalString.pipe(
       z.enum(["hibp", "off"]).optional(),
     ),
+    PAYMENT_GATEWAY: optionalString.pipe(
+      z.enum(["razorpay", "fake"]).optional(),
+    ),
+    RAZORPAY_KEY_ID: optionalString,
+    RAZORPAY_KEY_SECRET: optionalString,
+    RAZORPAY_WEBHOOK_SECRET: optionalString,
+    RAZORPAY_WEBHOOK_SECRET_PREVIOUS: optionalString,
+    CRON_SECRET: optionalString.pipe(
+      z
+        .string()
+        .min(16, "CRON_SECRET must be at least 16 characters")
+        .optional(),
+    ),
+    ORDER_NOTIFY_EMAIL: optionalString.pipe(
+      z.email("ORDER_NOTIFY_EMAIL must be an email address").optional(),
+    ),
   })
   .superRefine((value, ctx) => {
     if (value.SITE_ENV !== "production") return;
@@ -93,6 +132,15 @@ const rawEnvSchema = z
         code: "custom",
         path: ["EMAIL_TRANSPORT"],
         message: "EMAIL_TRANSPORT must be resend in production",
+      });
+    }
+
+    // The fake payment gateway accepts anything; it must never reach production.
+    if (value.PAYMENT_GATEWAY === "fake") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["PAYMENT_GATEWAY"],
+        message: "PAYMENT_GATEWAY must be razorpay in production",
       });
     }
 
@@ -130,6 +178,13 @@ export function parseEnv(source: EnvSource): ServerEnv {
     RESEND_API_KEY: source.RESEND_API_KEY,
     EMAIL_OUTBOX_DIR: source.EMAIL_OUTBOX_DIR,
     PASSWORD_BREACH_CHECK: source.PASSWORD_BREACH_CHECK,
+    PAYMENT_GATEWAY: source.PAYMENT_GATEWAY,
+    RAZORPAY_KEY_ID: source.RAZORPAY_KEY_ID,
+    RAZORPAY_KEY_SECRET: source.RAZORPAY_KEY_SECRET,
+    RAZORPAY_WEBHOOK_SECRET: source.RAZORPAY_WEBHOOK_SECRET,
+    RAZORPAY_WEBHOOK_SECRET_PREVIOUS: source.RAZORPAY_WEBHOOK_SECRET_PREVIOUS,
+    CRON_SECRET: source.CRON_SECRET,
+    ORDER_NOTIFY_EMAIL: source.ORDER_NOTIFY_EMAIL,
   });
 
   if (!result.success) {
@@ -141,6 +196,19 @@ export function parseEnv(source: EnvSource): ServerEnv {
   const production = result.data.SITE_ENV === "production";
   const transport =
     result.data.EMAIL_TRANSPORT ?? (production ? "resend" : "file");
+  const gateway =
+    result.data.PAYMENT_GATEWAY ?? (production ? "razorpay" : "fake");
+  const razorpay =
+    result.data.RAZORPAY_KEY_ID && result.data.RAZORPAY_KEY_SECRET
+      ? {
+          keyId: result.data.RAZORPAY_KEY_ID,
+          keySecret: result.data.RAZORPAY_KEY_SECRET,
+          webhookSecrets: [
+            result.data.RAZORPAY_WEBHOOK_SECRET,
+            result.data.RAZORPAY_WEBHOOK_SECRET_PREVIOUS,
+          ].filter((secret): secret is string => Boolean(secret)),
+        }
+      : null;
 
   return {
     siteEnv: result.data.SITE_ENV,
@@ -156,5 +224,8 @@ export function parseEnv(source: EnvSource): ServerEnv {
     },
     passwordBreachCheck:
       result.data.PASSWORD_BREACH_CHECK ?? (production ? "hibp" : "off"),
+    payments: { gateway, razorpay },
+    cronSecret: result.data.CRON_SECRET ?? null,
+    notifications: { ownerEmail: result.data.ORDER_NOTIFY_EMAIL ?? null },
   };
 }

@@ -1,0 +1,16 @@
+.deadline {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.clock {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.expired {
+  padding: var(--space-3) var(--space-4);
+  border-inline-start: 3px solid var(--color-error);
+  background-color: var(--color-cream);
+}

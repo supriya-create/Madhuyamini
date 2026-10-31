@@ -11,6 +11,7 @@ Before changing code, read:
 - `docs/data-model.md`: schema, constraints, deletion behaviour
 - `docs/auth.md`: authentication design, Better Auth configuration, security checklist
 - `docs/cart.md`: cart and wishlist rules (C1–C6), guest cookie, merge on sign-in
+- `docs/checkout.md`: orders, payments, reservations, jobs; transaction catalogue and lock order (§5.5), recovery (§5.6–§5.8)
 
 ## Workflow
 
@@ -35,6 +36,7 @@ Before changing code, read:
 - **Database:** schema changes go through `prisma migrate dev`; invariants Prisma cannot express (`CHECK`) are hand-written into the migration SQL and tested in `tests/integration/`. Data access lives in `features/*/data.ts` with explicit `select`; UI never imports Prisma types (use the DTOs in `types.ts`). Storefront reads expose only `ACTIVE` products.
 - **Authentication:** Better Auth is configured in `src/server/auth/auth.ts`; call it only through Server Actions, never expose new HTTP paths without a reason. Authorisation lives in `src/server/auth/current-user.ts` (`requireUser`, `requireRole`) and in data access scoped by user id; `proxy.ts` is optimistic only. Never accept `role` from input. Rate-limit every credential-handling action with `consumeRateLimit`. Responses to sign-in, registration and reset must not reveal whether an email exists.
 - **Cart:** the cart is resolved from the request (`resolveCartContext`: session first, else the hashed guest cookie), never from form input; line ids are always checked against that cart. Prices and stock are re-read from the database in every operation; `priceSeenInPaise` is for the price-change notice only and is never charged. Quantities obey `clampQuantity` (max 10, 1 for one-of-a-kind, never above available stock). Wishlists are accounts-only.
+- **Checkout and payments:** every amount, duration, limit and schedule lives in `src/config/checkout-policy.ts` (a unit test rejects literals elsewhere); orders snapshot what they applied. Never mark an order paid from the browser callback alone: verify the signature, then confirm the capture from the provider (`confirmFromCallback`) or a signed webhook, and apply it through `applyCapture`. Never call the provider inside a transaction; write the intent row (attempt with `receipt`, refund with `reference`) first, call, then persist. Follow the lock order `carts → orders → payments/refunds → inventory (ascending variant id) → reservations`. Stock moves only through `features/inventory/service.ts` conditional updates. Guest order access is by hashed token only; orders are never fetched by id alone. Jobs go through `server/jobs/queue.ts` claims and are idempotent.
 - **Seed data** is development-only: idempotent, clearly labelled, guarded against production. Never add real merchandise, customers or reviews to fixtures.
 - **Links:** internal URLs come from `src/lib/routes.ts`. Links to routes not yet built must be listed in `e2e/pending-routes.ts`.
 - **Accessibility (WCAG 2.2 AA):** axe must report zero violations, and keyboard paths are covered by e2e tests.
@@ -50,4 +52,5 @@ Before changing code, read:
 | `npm run format` / `format:check` | Prettier                                                                                 |
 | `npm test`                        | Vitest unit tests                                                                        |
 | `npm run test:e2e`                | Builds, starts on :3100, runs Playwright and axe (Chromium + WebKit, desktop and mobile) |
+| `npm run job -- <name>`           | Runs one scheduled job by hand (expire-reservations, send-notifications, cleanup, …)     |
 | `npm run check`                   | Every gate above, in order                                                               |

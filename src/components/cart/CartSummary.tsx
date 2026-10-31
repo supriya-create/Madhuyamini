@@ -30,10 +30,15 @@ export function CartSummary({ cart }: { cart: CartView }) {
           them before checking out.
         </p>
       ) : null}
+      {cart.canCheckout ? (
+        <ButtonLink href={routes.checkout}>Proceed to checkout</ButtonLink>
+      ) : (
+        <p className={styles.note}>
+          Checkout is unavailable until every line can be bought as chosen.
+        </p>
+      )}
       <p className={styles.note}>
-        {cart.canCheckout
-          ? "Checkout opens in the next release. Prices are confirmed when your order is placed."
-          : "Checkout is unavailable until every line can be bought as chosen."}
+        Prices are confirmed when your order is placed.
       </p>
       <ButtonLink href={routes.collections} variant="secondary">
         Continue shopping

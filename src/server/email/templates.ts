@@ -92,3 +92,139 @@ export function passwordChangedMessage(params: {
     ]),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Orders (Phase 6). Amounts arrive formatted; templates never do arithmetic.
+// ---------------------------------------------------------------------------
+
+export interface OrderEmailLine {
+  readonly title: string;
+  readonly variantTitle: string | null;
+  readonly quantity: number;
+  readonly lineTotal: string;
+}
+
+export interface OrderEmailSummary {
+  readonly orderNumber: string;
+  readonly recipientName: string;
+  readonly paymentMethod: "RAZORPAY" | "COD";
+  readonly lines: readonly OrderEmailLine[];
+  readonly subtotal: string;
+  readonly shipping: string;
+  readonly codFee: string | null;
+  readonly total: string;
+  readonly addressLines: readonly string[];
+  readonly trackUrl: string;
+}
+
+function describeLines(summary: OrderEmailSummary): string[] {
+  return [
+    ...summary.lines.map(
+      (line) =>
+        `${line.quantity} × ${line.title}${line.variantTitle ? ` (${line.variantTitle})` : ""} — ${line.lineTotal}`,
+    ),
+    `Subtotal ${summary.subtotal} · Shipping ${summary.shipping}${summary.codFee ? ` · Cash on delivery fee ${summary.codFee}` : ""} · Total ${summary.total}`,
+  ];
+}
+
+export function orderConfirmedMessage(params: {
+  to: string;
+  summary: OrderEmailSummary;
+}): EmailMessage {
+  const { summary } = params;
+  const payment =
+    summary.paymentMethod === "COD"
+      ? `Please keep ${summary.total} ready to pay on delivery.`
+      : `Your payment of ${summary.total} has been received.`;
+  return {
+    to: params.to,
+    subject: `Order ${summary.orderNumber} confirmed — ${BRAND}`,
+    ...layout(
+      [
+        `Hello ${summary.recipientName},`,
+        `Thank you for your order ${summary.orderNumber}. ${payment}`,
+        ...describeLines(summary),
+        `Delivery to: ${summary.addressLines.join(", ")}`,
+        `We will write again when it is on its way.`,
+      ],
+      { label: "View your order", url: summary.trackUrl },
+    ),
+  };
+}
+
+export function orderCancelledMessage(params: {
+  to: string;
+  orderNumber: string;
+  reason: "timeout" | "customer";
+  cartUrl: string;
+}): EmailMessage {
+  const why =
+    params.reason === "timeout"
+      ? "the payment was not completed in time, so the pieces were released"
+      : "you cancelled it";
+  return {
+    to: params.to,
+    subject: `Order ${params.orderNumber} cancelled — ${BRAND}`,
+    ...layout(
+      [
+        `Order ${params.orderNumber} has been cancelled because ${why}.`,
+        `Nothing has been charged. Your cart is still waiting if you would like to try again.`,
+      ],
+      { label: "Return to your cart", url: params.cartUrl },
+    ),
+  };
+}
+
+export function refundRequestedMessage(params: {
+  to: string;
+  orderNumber: string;
+  amount: string;
+  reason: "late_capture_no_stock" | "duplicate_payment" | string;
+  trackUrl: string;
+}): EmailMessage {
+  const why =
+    params.reason === "duplicate_payment"
+      ? "a second payment reached us for an order that was already paid"
+      : "the payment reached us after the pieces had been released and they are no longer available";
+  return {
+    to: params.to,
+    subject: `Refund of ${params.amount} for order ${params.orderNumber} — ${BRAND}`,
+    ...layout(
+      [
+        `We are sorry: ${why}.`,
+        `A refund of ${params.amount} has been requested with our payment provider. It usually reaches the original payment method within 5–7 working days.`,
+        `If you have any questions, reply to this email with your order number ${params.orderNumber}.`,
+      ],
+      { label: "View your order", url: params.trackUrl },
+    ),
+  };
+}
+
+export function ownerNewOrderMessage(params: {
+  to: string;
+  summary: OrderEmailSummary;
+  customerEmail: string;
+}): EmailMessage {
+  const { summary } = params;
+  return {
+    to: params.to,
+    subject: `New order ${summary.orderNumber} (${summary.total}, ${summary.paymentMethod === "COD" ? "cash on delivery" : "paid online"})`,
+    ...layout([
+      `A new order was placed by ${params.customerEmail}.`,
+      ...describeLines(summary),
+      `Deliver to: ${summary.recipientName}, ${summary.addressLines.join(", ")}`,
+    ]),
+  };
+}
+
+export function opsAlertMessage(params: {
+  to: string;
+  title: string;
+  details: readonly string[];
+}): EmailMessage {
+  return {
+    to: params.to,
+    subject: `[${BRAND} ops] ${params.title}`,
+    ...layout([params.title, ...params.details]),
+  };
+}

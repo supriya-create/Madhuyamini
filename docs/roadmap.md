@@ -1,22 +1,22 @@
 # Madhuyamini — Roadmap
 
-Status: **Phases 1–5 implemented (31 Oct 2026); Phase 6 proposed.** Brand inputs (D2) are still outstanding; the Phase 6 proposal ([checkout.md](checkout.md)) awaits approval.
+Status: **Phases 1–6 implemented (1 Nov 2026).** Brand inputs (D2) are still outstanding; Phase 6 awaits owner review and a Razorpay test-mode smoke run with the owner's keys.
 
 Related: [architecture.md](architecture.md) · [design-system.md](design-system.md). Decision IDs (D1–D9) refer to architecture.md §7.
 
-| #   | Phase                                       | Status                                    | Decisions needed first  |
-| --- | ------------------------------------------- | ----------------------------------------- | ----------------------- |
-| 1   | Project setup and homepage foundation       | **Implemented; open items**               | D2 (D1 decided)         |
-| 2   | Database and backend foundation             | **Implemented; open items**               | D4 (deferred to 11)     |
-| 3   | Product catalog                             | **Implemented; open items**               | D2 (imagery)            |
-| 4   | Authentication and customer accounts        | **Implemented** ([auth.md](auth.md))      | decided (D3, D5, P1–P5) |
-| 5   | Cart and wishlist                           | **Implemented** ([cart.md](cart.md))      | decided (C1–C6)         |
-| 6   | Checkout and payments (Razorpay + COD)      | **Proposed** ([checkout.md](checkout.md)) | D6, D7a–c, P6–P12       |
-| 7   | Admin dashboard                             | Not started                               | none                    |
-| 8   | Advanced e-commerce features                | Not started                               | D7                      |
-| 9   | Brand experience and content                | Not started                               | D2                      |
-| 10  | Testing, security and performance hardening | Not started                               | D8, D9                  |
-| 11  | Production deployment                       | Not started                               | none                    |
+| #   | Phase                                       | Status                                       | Decisions needed first      |
+| --- | ------------------------------------------- | -------------------------------------------- | --------------------------- |
+| 1   | Project setup and homepage foundation       | **Implemented; open items**                  | D2 (D1 decided)             |
+| 2   | Database and backend foundation             | **Implemented; open items**                  | D4 (deferred to 11)         |
+| 3   | Product catalog                             | **Implemented; open items**                  | D2 (imagery)                |
+| 4   | Authentication and customer accounts        | **Implemented** ([auth.md](auth.md))         | decided (D3, D5, P1–P5)     |
+| 5   | Cart and wishlist                           | **Implemented** ([cart.md](cart.md))         | decided (C1–C6)             |
+| 6   | Checkout and payments (Razorpay + COD)      | **Implemented** ([checkout.md](checkout.md)) | decided (D6, D7a–c, P6–P12) |
+| 7   | Admin dashboard                             | Not started                                  | none                        |
+| 8   | Advanced e-commerce features                | Not started                                  | D7                          |
+| 9   | Brand experience and content                | Not started                                  | D2                          |
+| 10  | Testing, security and performance hardening | Not started                                  | D8, D9                      |
+| 11  | Production deployment                       | Not started                                  | none                        |
 
 ### Sequencing notes
 
@@ -358,6 +358,56 @@ Fixes made because tests caught them: a `"use server"` module may export only as
 - **No hearts on listing cards yet.** The wishlist can be toggled from the product page and the wishlist page; adding the heart to every card means threading the saved-id set through the listing pages, which is a small follow-up.
 - **Sold-out and price-change states are covered by integration tests, not e2e.** The e2e server runs on the seeded development database and must not alter stock or prices mid-run.
 - **Expired guest carts** are closed by `cleanupCarts()`, which has no schedule yet (Phase 6 crons, with the session and rate-limit sweeps).
+
+---
+
+## Phase 6 — Checkout and payments
+
+Approved 1 Nov 2026 with D6 (15-minute holds, one 15-minute extension), D7a (₹99 shipping, free from ₹1,999), D7b (cash on delivery up to ₹5,000, no fee), D7c (not GST-registered: no tax line) and P6–P12 as recommended; design and implementation notes in [checkout.md](checkout.md).
+
+### Checklist
+
+- [x] Migration 6: `orders`, `order_items`, `payments`, `refunds`, `order_access_tokens`, `payment_webhook_events`, `order_events`, `notification_outbox`, `inventory_reservations.order_id`; 24 CHECK constraints and two partial unique indexes (one live order per cart, one open attempt per order); `rollback.sql`; zero drift
+- [x] One validated policy object (`src/config/checkout-policy.ts`) holding every amount, duration, limit and schedule; a unit test scans the checkout, orders, payments, inventory and jobs modules for stray literals
+- [x] Pure rules: quotes and `quoteHash` (P12), shipping and COD eligibility, included tax, order numbers (P7), order/payment/reservation state machines, HMAC signature helpers
+- [x] Inventory service: conditional single-row updates for reserve/commit/consume/release, ascending variant-id lock order, lock-then-check commit for late captures
+- [x] Placement (T1/T2) with immutable item snapshots at live prices, the cart as idempotency key (row lock + partial unique index), COD confirmed at once, guest access token issued in the same transaction
+- [x] Provider steps outside transactions (S2/S3): attempts start `INITIATED` with a unique receipt; lost responses recovered by receipt; failures recorded with give-up after the policy's attempts
+- [x] Razorpay over its REST API behind a `PaymentGateway` interface, plus a deterministic fake gateway for development, tests and CI (refused in production by the env schema)
+- [x] Capture handling (T5) with amount/currency check, late-capture restock or refund intent, duplicate-payment refund intent; failure handling (T6) that never overwrites a capture; capture allowed after a recorded failure on the same provider order
+- [x] Browser callback: signature verified, then the capture confirmed from the provider before T5; "confirming" page polls when the provider has not captured yet
+- [x] Webhook route: raw-body signature, event-id ledger, 200 once stored, inline apply with `SKIP LOCKED`, retries by job
+- [x] Jobs with one claim/lease/backoff contract: expire-reservations (reconciles before cancelling), recover-payments, reconcile-payments, process-webhooks, refund-payments (find-by-reference before create; polls to completion), send-notifications (outbox with provider idempotency key), cleanup (carts, rate limits, sessions, verifications, tokens); cron routes with bearer secret; `vercel.json`; `npm run job -- <name>`
+- [x] Guest order access: 256-bit tokens, hash-only storage, rotation on lookup, 7-day expiry, full details for the first hour then reduced
+- [x] UI: `/checkout` (contact, saved or new address, payment method, note; works without JavaScript), `/checkout/pay/[id]` (Razorpay Checkout, deadline countdown, retry, cancel; simulator panel with the fake gateway), `/checkout/confirming/[id]`, `/checkout/confirmation/[id]`, `/account/orders` and `/account/orders/[number]` with timeline, `/orders/track`; cart gains "Proceed to checkout"; account navigation gains Orders
+- [x] Emails: order confirmed (customer), new order (owner), cancelled, refund requested, operations alerts; all through the outbox
+- [ ] Razorpay **test-mode smoke** on a deployed preview with the owner's keys (§15 of checkout.md) — not run; needs keys
+- [ ] Vercel Hobby plan runs crons at most daily; per-5-minute schedules need Pro or an external pinger — decide at deployment (Phase 11)
+- [ ] Policy pages for Razorpay live activation — Phase 9, before go-live
+- [ ] Admin tooling for `NEEDS_REVIEW` orders and `FAILED` queue rows — Phase 7
+
+### Results (1 Nov 2026)
+
+| Gate                       | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `npm run typecheck`        | Clean                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `npm run lint`             | 0 problems                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `npm run format:check`     | Clean                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `npm test` (unit)          | 181 passed (+50: policy and literal scan, pricing rules and `quoteHash`, state machines, order numbers, signatures, fake gateway, env)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `npm run test:integration` | 172 passed (+71: inventory 11 incl. last-unit race and opposite-order locking; schema invariants 10; checkout 19 incl. concurrent placement, provider recovery, attempts, access; payments 16 incl. callback, webhook ledger, out-of-order and late captures, reconciliation; jobs 15 incl. sweeps, leases, retries, give-up alerts, concurrent workers, cron auth)                                                                                                                                                                                                                                                            |
+| `npm run build`            | Succeeds (inside the e2e step)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `npm run test:e2e`         | 281 passed, 19 skipped by design (+32: `checkout.spec.ts`, 8 journeys × 4 browser projects): guest cash-on-delivery → confirmation → email through the outbox job → tracking by number and email (wrong email refused); private confirmation page; empty cart blocked; signed-in online order → simulated capture → confirmation, orders list, detail with timeline, address saved; failed payment → Try again → cancel keeps the cart; capture delivered by webhook only (signed accepted, tampered refused); no-JavaScript placement; cron route auth; axe on checkout, pay, confirmation, orders, order detail and tracking |
+| Migration 6                | Applied on both local databases; `rollback.sql` exercised on the test database and re-deployed; zero drift on both                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+
+Fixes made because tests caught them: a `"use server"` module may export only async functions; a `<label>` wrapping a `<select>` takes the value into its name, and jsx-a11y wants label text within two levels; leaving `CANCELLED` must clear the cancellation reason (CHECK); one provider order can carry several payment tries, so `FAILED → CAPTURED` is allowed; fake gateway ids must stay unique across server restarts (they sit under a unique index); the pay page said "Start payment" instead of "Try again" after a failed attempt; e2e journeys consume stock, so they buy a deep-stock fixture and Playwright re-seeds before each run; new browser contexts need their own client address and unique lookup emails or the per-IP and per-email limits trip; Chromium restores the scroll position on reload, which parked the sticky header over a button the axe audit measured.
+
+### Known issues and follow-ups
+
+- **Not verified against real Razorpay.** Everything is proven against the fake gateway and the documented API shapes; the first run with test-mode keys (UPI `success@razorpay` / `failure@razorpay`, webhook delivery to a preview URL) is still to be done and may surface field-mapping differences.
+- **Cron frequency on Vercel Hobby** is once a day; the design tolerates slow sweeps (deadlines are enforced on read as well), but refunds and emails would lag. Use Pro or an external scheduler hitting `/api/cron/*` with the bearer secret.
+- **Resend idempotency header** is sent as `Idempotency-Key`; if Resend ignores it, the only duplicate window is a crash between send and completion (logged on the row).
+- **Guest orders are not linked to a later account** with the same email (Phase 8).
+- **Refund status webhooks** (`refund.processed`) are applied; staff-initiated refunds and the review screen are Phase 7.
 
 ---
 
