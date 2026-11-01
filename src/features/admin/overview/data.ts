@@ -25,6 +25,8 @@ export interface OverviewCounts {
   readonly failedRefunds: number;
   readonly ordersToday: number;
   readonly revenueTodayInPaise: number;
+  readonly revenueWeekInPaise: number;
+  readonly revealsThisWeek: number;
 }
 
 function startOfToday(now: Date): Date {
@@ -38,6 +40,24 @@ function startOfToday(now: Date): Date {
   return new Date(`${parts}T00:00:00+05:30`);
 }
 
+/** Same definition as the reports: confirmed or beyond with a captured (or collected) payment. */
+async function paidSince(
+  tx: Prisma.TransactionClient,
+  since: Date,
+): Promise<{ orders: number; grossInPaise: number }> {
+  const [row] = await tx.$queryRaw<Array<{ orders: number; gross: bigint }>>`
+    SELECT count(*)::int AS orders, coalesce(sum(o.total_in_paise), 0)::bigint AS gross
+      FROM orders o
+     WHERE o.status IN ('CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED')
+       AND o.created_at >= ${since}
+       AND EXISTS (
+         SELECT 1 FROM payments p
+          WHERE p.order_id = o.id AND p.status IN ('CAPTURED', 'REFUNDED')
+       )
+  `;
+  return { orders: row?.orders ?? 0, grossInPaise: Number(row?.gross ?? 0) };
+}
+
 export async function loadOverview(
   ctx: StaffContext,
   now = new Date(),
@@ -45,6 +65,7 @@ export async function loadOverview(
 ): Promise<OverviewCounts> {
   await requirePermission(ctx, "admin.view", { tx });
   const today = startOfToday(now);
+  const weekAgo = new Date(today.getTime() - 6 * 24 * 60 * 60 * 1000); // policy-literal-ok: seven calendar days
   const [
     awaitingFulfilment,
     shipped,
@@ -57,6 +78,8 @@ export async function loadOverview(
     failedWebhooks,
     failedRefunds,
     todayAggregate,
+    weekAggregate,
+    revealsThisWeek,
   ] = await Promise.all([
     tx.order.count({ where: { status: { in: ["CONFIRMED", "PROCESSING"] } } }),
     tx.order.count({ where: { status: "SHIPPED" } }),
@@ -75,14 +98,9 @@ export async function loadOverview(
     tx.notificationOutbox.count({ where: { status: "FAILED" } }),
     tx.paymentWebhookEvent.count({ where: { status: "FAILED" } }),
     tx.refund.count({ where: { status: "FAILED" } }),
-    tx.order.aggregate({
-      where: {
-        createdAt: { gte: today },
-        status: { in: ["CONFIRMED", "PROCESSING", "SHIPPED", "DELIVERED"] },
-      },
-      _count: { _all: true },
-      _sum: { totalInPaise: true },
-    }),
+    paidSince(tx, today),
+    paidSince(tx, weekAgo),
+    tx.staffPiiReveal.count({ where: { createdAt: { gte: weekAgo } } }),
   ]);
   return {
     awaitingFulfilment,
@@ -95,7 +113,9 @@ export async function loadOverview(
     failedNotifications,
     failedWebhooks,
     failedRefunds,
-    ordersToday: todayAggregate._count._all,
-    revenueTodayInPaise: todayAggregate._sum.totalInPaise ?? 0,
+    ordersToday: todayAggregate.orders,
+    revenueTodayInPaise: todayAggregate.grossInPaise,
+    revenueWeekInPaise: weekAggregate.grossInPaise,
+    revealsThisWeek,
   };
 }

@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { SignOutButton } from "@/components/auth/SignOutButton";
 import { MAIN_CONTENT_ID, SkipLink } from "@/components/layout/SkipLink";
 import { site } from "@/content/site";
+import { can } from "@/features/admin/authz";
 import type { StaffContext } from "@/server/auth/staff";
 import { routes } from "@/lib/routes";
 
@@ -25,6 +26,9 @@ export const ADMIN_NAV: ReadonlyArray<AdminNavItem> = [
   { label: "Operations", href: routes.adminOperations },
   { label: "Inventory", href: routes.adminInventory },
   { label: "Catalogue", href: routes.adminProducts },
+  { label: "Customers", href: routes.adminCustomers },
+  { label: "Reports", href: routes.adminReports },
+  { label: "Audit", href: routes.adminAudit, capability: "audit.view" },
 ];
 
 export function AdminShell({
@@ -55,7 +59,11 @@ export function AdminShell({
             <SignOutButton variant="quiet" />
           </div>
         </div>
-        <AdminNav items={ADMIN_NAV} />
+        <AdminNav
+          items={ADMIN_NAV.filter(
+            (item) => !item.capability || can(ctx.role, item.capability),
+          )}
+        />
       </header>
       <main id={MAIN_CONTENT_ID} tabIndex={-1} className={styles.main}>
         {children}

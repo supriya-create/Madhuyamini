@@ -59,6 +59,17 @@ export default async function AdminOverviewPage() {
       attention: counts.lowStock > 0,
     },
     {
+      label: "Revenue, 7 days",
+      value: formatINR(counts.revenueWeekInPaise),
+      hint: "Confirmed or beyond, before refunds",
+    },
+    {
+      label: "Customer-data reveals, 7 days",
+      value: String(counts.revealsThisWeek),
+      hint: "Each one recorded with who, why and which fields",
+      attention: counts.revealsThisWeek > 0,
+    },
+    {
       label: "Failed jobs",
       value: String(
         counts.failedNotifications +
@@ -77,7 +88,7 @@ export default async function AdminOverviewPage() {
     <div>
       <AdminPageHeader
         title="Overview"
-        lede={`Today so far: ${counts.ordersToday} ${counts.ordersToday === 1 ? "order" : "orders"} worth ${formatINR(counts.revenueTodayInPaise)} (paid or cash on delivery, not cancelled).`}
+        lede={`Today so far: ${counts.ordersToday} ${counts.ordersToday === 1 ? "order" : "orders"} worth ${formatINR(counts.revenueTodayInPaise)} (paid online or cash collected; before refunds).`}
       />
       <ul className={styles.stats}>
         {stats.map((stat) => (

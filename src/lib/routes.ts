@@ -41,6 +41,8 @@ export const routes = {
   adminProduct: (id: string) => `/admin/catalogue/products/${id}`,
   adminCategories: "/admin/catalogue/categories",
   adminCustomers: "/admin/customers",
+  adminCustomer: (id: string) => `/admin/customers/${id}`,
+  adminReportsExport: "/admin/reports/export",
   adminReports: "/admin/reports",
   adminAudit: "/admin/audit",
   accountWishlist: "/account/wishlist",
