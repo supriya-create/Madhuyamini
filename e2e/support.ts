@@ -19,6 +19,10 @@ export function tabKey(browserName: string): string {
 const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 
 export async function expectNoAxeViolations(page: Page, context?: string) {
+  // Next.js streams metadata after the initial UI, so right after a
+  // navigation the document can be a moment without its <title>. Wait for
+  // it: a page that never sets one still fails here, with a clear message.
+  await expect(page).toHaveTitle(/\S/);
   // Target sizes depend on the final layout: wait for web fonts, and start
   // from the top so the sticky header overlaps nothing being measured.
   await page.evaluate(async () => {

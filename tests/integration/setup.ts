@@ -22,3 +22,6 @@ process.env.ADMIN_TOTP_KEY ??= "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA";
 process.env.CLOUDINARY_CLOUD_NAME ??= "test-cloud";
 process.env.CLOUDINARY_API_KEY ??= "123456789012345";
 process.env.CLOUDINARY_API_SECRET ??= "integration-test-cloudinary-secret";
+// A second throwaway key stands in for the key rotated out (rotation tests).
+process.env.ADMIN_TOTP_KEY_PREVIOUS ??=
+  "ISEjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0-P0A";

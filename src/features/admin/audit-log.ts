@@ -1,11 +1,12 @@
 import "server-only";
 
-import { createHash } from "node:crypto";
+import { createHmac } from "node:crypto";
 
 import type { Prisma } from "@/generated/prisma/client";
 import type { AuditOutcome, UserRole } from "@/generated/prisma/enums";
 import type { StaffContext } from "@/server/auth/staff";
 import { db } from "@/server/db";
+import { env } from "@/server/env";
 
 import { redactForAudit } from "./redact";
 
@@ -50,11 +51,15 @@ export function systemActor(job: string): AuditActor {
   };
 }
 
+/** Keyed, so a copy of the log cannot be joined back to addresses by brute force. */
 export function hashRequestIp(
   address: string | null | undefined,
 ): string | null {
   if (!address) return null;
-  return createHash("sha256").update(address).digest("base64url").slice(0, 24);
+  return createHmac("sha256", env.betterAuthSecret)
+    .update(address)
+    .digest("base64url")
+    .slice(0, 24);
 }
 
 export interface AuditEntry {

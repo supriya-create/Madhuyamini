@@ -149,6 +149,8 @@ export async function refundableAttempts(
         where: { status: { not: "FAILED" } },
         select: { amountInPaise: true },
       },
+      // Every refund row, failed ones included: references must never collide.
+      _count: { select: { refunds: true } },
     },
     orderBy: { attemptNo: "asc" },
   });
@@ -162,7 +164,7 @@ export async function refundableAttempts(
         (sum, r) => sum + r.amountInPaise,
         0,
       ),
-      refundCount: attempt.refunds.length,
+      refundCount: attempt._count.refunds,
     });
   }
   return result;

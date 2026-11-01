@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import { hashPassword } from "better-auth/crypto";
+
 import { getAdminPolicy } from "@/config/admin-policy";
 import type { UserRole } from "@/generated/prisma/enums";
 import {
@@ -17,11 +19,16 @@ import { testDb } from "./db";
 
 export type StaffUserRow = Omit<CurrentUser, "session">;
 
+/** Every fixture account signs in with this; enrolment re-enters it. */
+export const STAFF_PASSWORD = "peacock on the pallu";
+let passwordHash: string | null = null;
+
 export async function createStaffUser(
   role: UserRole,
   email = `${role.toLowerCase()}-${randomUUID().slice(0, 8)}@example.com`,
 ): Promise<StaffUserRow> {
-  return testDb.user.create({
+  passwordHash ??= await hashPassword(STAFF_PASSWORD);
+  const user = await testDb.user.create({
     data: { email, name: `Test ${role}`, role, emailVerified: true },
     select: {
       id: true,
@@ -32,6 +39,15 @@ export async function createStaffUser(
       role: true,
     },
   });
+  await testDb.account.create({
+    data: {
+      userId: user.id,
+      providerId: "credential",
+      accountId: user.id,
+      password: passwordHash,
+    },
+  });
+  return user;
 }
 
 export async function createSession(user: StaffUserRow): Promise<CurrentUser> {
@@ -64,7 +80,7 @@ export async function enrolAndVerify(
   secretBase32: string;
   recoveryCodes: readonly string[];
 }> {
-  const start = await beginEnrolment(user, now);
+  const start = await beginEnrolment(user, STAFF_PASSWORD, now);
   const { recoveryCodes } = await confirmEnrolment(
     user,
     codeFor(start.secretBase32, now),

@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
-import { runAudited, writeAudit } from "@/features/admin/audit";
+import { hashRequestIp, runAudited, writeAudit } from "@/features/admin/audit";
 import {
   ForbiddenCapabilityError,
   ReauthRequiredError,
@@ -20,6 +20,7 @@ import { AppError } from "@/server/errors";
 
 import { resetDatabase, testDb } from "./db";
 import {
+  STAFF_PASSWORD,
   codeFor,
   createSession,
   createStaffUser,
@@ -66,7 +67,7 @@ describe("StaffContext resolution", () => {
 
     // A pending enrolment is not an enrolment.
     const now = new Date();
-    const start = await beginEnrolment(staff, now);
+    const start = await beginEnrolment(staff, STAFF_PASSWORD, now);
     expect(await resolveStaffContext(staff)).toEqual({
       ok: false,
       reason: "not_enrolled",
@@ -441,5 +442,65 @@ describe("enrolment keeps the gate closed for other sessions", () => {
       ok: false,
       reason: "unverified",
     });
+  });
+});
+
+describe("audit regressions", () => {
+  it("records a REFUSED row even for a forged context whose actor the database does not know", async () => {
+    const forged = {
+      user: {
+        id: "00000000-0000-7000-8000-00000000f0f0",
+        email: "ghost@example.com",
+        emailVerified: true,
+        name: "Ghost",
+        phone: null,
+        role: "ADMIN",
+        session: {
+          id: "00000000-0000-7000-8000-00000000f0f1",
+          token: "x",
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 60_000),
+        },
+      },
+      role: "ADMIN",
+      sessionId: "00000000-0000-7000-8000-00000000f0f1",
+      verifiedAt: new Date(),
+    } as unknown as StaffContext;
+    await expect(
+      runAudited(
+        {
+          ctx: forged,
+          action: "category.create",
+          targetType: "category",
+          capability: "catalogue.edit",
+        },
+        async () => ({ result: undefined }),
+      ),
+    ).rejects.toBeInstanceOf(StaffGateError);
+    const rows = await testDb.adminAuditLog.findMany({
+      where: { action: "category.create" },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      outcome: "REFUSED",
+      actorId: null,
+      actorLabel: "unverified:00000000-0000-7000-8000-00000000f0f0",
+      errorCode: "STAFF_FORBIDDEN",
+    });
+    expect(await testDb.category.count()).toBe(0);
+  });
+
+  it("hashes request addresses with a key, not a bare digest", async () => {
+    const { createHash } = await import("node:crypto");
+    const hashed = hashRequestIp("203.0.113.9");
+    expect(hashed).toHaveLength(24);
+    expect(hashed).toBe(hashRequestIp("203.0.113.9"));
+    expect(hashed).not.toBe(
+      createHash("sha256")
+        .update("203.0.113.9")
+        .digest("base64url")
+        .slice(0, 24),
+    );
+    expect(hashRequestIp(null)).toBeNull();
   });
 });

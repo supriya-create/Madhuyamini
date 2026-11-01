@@ -68,6 +68,7 @@ async function signInForAdmin(page: Page, email: string): Promise<void> {
 async function signInStaff(page: Page, email: string): Promise<string> {
   await signInForAdmin(page, email);
   await expect(page).toHaveURL(/\/account\/security\/two-factor/);
+  await page.getByLabel("Current password").fill(PASSWORD);
   await page.getByRole("button", { name: "Start setup" }).click();
   const key = await page.getByLabel("Setup key").textContent();
   if (!key) throw new Error("no setup key");

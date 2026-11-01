@@ -4,8 +4,11 @@ import { notFound } from "next/navigation";
 
 import { AccountShell } from "@/components/account/AccountShell";
 import shellStyles from "@/components/account/AccountShell.module.css";
+import { RecoveryCodesForm } from "@/components/admin/RecoveryCodesForm";
 import { TwoFactorEnrolForm } from "@/components/admin/TwoFactorEnrolForm";
 import styles from "@/components/admin/TwoFactor.module.css";
+import formStyles from "@/components/forms/Form.module.css";
+import { PasswordField } from "@/components/forms/PasswordField";
 import { Button } from "@/components/ui/Button";
 import { beginEnrolmentAction } from "@/features/admin/security/actions";
 import {
@@ -22,6 +25,18 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+/** Only an error code travels in the URL; the wording lives here. */
+const ERRORS: Readonly<Record<string, string>> = {
+  TWO_FACTOR_PASSWORD: "That password is not right.",
+  TWO_FACTOR_RATE_LIMITED:
+    "Too many attempts. Please wait before trying again.",
+  TWO_FACTOR_ALREADY_ENABLED:
+    "Two-factor sign-in is already set up. Ask an admin to reset it if you lost your device.",
+  TWO_FACTOR_NOT_CONFIGURED:
+    "Second-factor sign-in is not configured on this server.",
+  TWO_FACTOR_NOT_AVAILABLE: "Two-factor sign-in is for staff accounts.",
+};
+
 /**
  * Enrolment and status for the staff second factor (docs/admin.md §5.9).
  * There is no "turn off": a staff account without it cannot open the admin.
@@ -35,7 +50,10 @@ export default async function TwoFactorPage({
   const next = safeReturnPath(query.next, routes.admin);
   const status = await securityStatus(user);
   const pending = status.pending ? await pendingEnrolment(user) : null;
-  const error = typeof query.error === "string" ? query.error : null;
+  const error =
+    typeof query.error === "string"
+      ? (ERRORS[query.error] ?? "That did not work. Please try again.")
+      : null;
 
   return (
     <AccountShell user={user} title="Two-factor sign-in">
@@ -77,6 +95,12 @@ export default async function TwoFactorPage({
             Lost your authenticator app? Use a recovery code to sign in, or ask
             an admin to reset your second factor so you can set it up again.
           </p>
+          <details className={styles.details}>
+            <summary>Issue new recovery codes</summary>
+            <div>
+              <RecoveryCodesForm />
+            </div>
+          </details>
         </div>
       ) : pending ? (
         <div className={shellStyles.panel}>
@@ -94,9 +118,19 @@ export default async function TwoFactorPage({
             authenticator app. You will get ten one-time recovery codes for when
             the app is not to hand. Setting up takes about a minute.
           </p>
-          <form action={beginEnrolmentAction}>
+          <form action={beginEnrolmentAction} className={formStyles.form}>
             <input type="hidden" name="next" value={next} />
-            <Button type="submit">Start setup</Button>
+            <PasswordField
+              id="enrol-password"
+              name="password"
+              label="Current password"
+              hint="Setting up a second factor starts with your password."
+              autoComplete="current-password"
+              required
+            />
+            <div className={formStyles.actions}>
+              <Button type="submit">Start setup</Button>
+            </div>
           </form>
         </div>
       )}

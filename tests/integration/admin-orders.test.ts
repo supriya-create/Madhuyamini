@@ -632,3 +632,102 @@ describe("reads: list, detail and masking (§5.4, §5.7)", () => {
     ).toBeNull();
   });
 });
+
+describe("concurrency regressions", () => {
+  it("lets exactly one of several concurrent inspections close the order and restock", async () => {
+    const staff = await verifiedStaff("STAFF");
+    const placed = await placeTestOrder("COD", {
+      sku: "CC-1",
+      stock: 5,
+      quantity: 2,
+    });
+    await startProcessing(staff.ctx, placed.orderId);
+    await shipOrder(staff.ctx, placed.orderId, SHIP);
+    await markDeliveryFailed(staff.ctx, placed.orderId, {
+      reason: "UNCLAIMED",
+      note: null,
+    });
+    await markParcelReturned(staff.ctx, placed.orderId, "Back.");
+    const item = await testDb.orderItem.findFirstOrThrow({
+      where: { orderId: placed.orderId },
+    });
+    expect(await stockOf(placed.variantId)).toEqual({
+      stockOnHand: 3,
+      reserved: 0,
+    });
+
+    const results = await Promise.allSettled(
+      [1, 2, 3].map(() =>
+        completeInspection(staff.ctx, placed.orderId, {
+          note: "Both fine.",
+          items: [{ orderItemId: item.id, restockQty: 2, writeOffQty: 0 }],
+        }),
+      ),
+    );
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const snap = await orderSnapshot(placed.orderId);
+    expect(snap.order.status).toBe("CANCELLED");
+    expect(snap.adjustments.map((a) => [a.kind, a.delta])).toEqual([
+      ["RESTOCK_ON_RETURN", 2],
+    ]);
+    expect(await stockOf(placed.variantId)).toEqual({
+      stockOnHand: 5,
+      reserved: 0,
+    });
+    expect(
+      snap.auditOutcomes
+        .filter(([action]) => action === "order.inspection_completed")
+        .sort(),
+    ).toEqual(
+      [
+        ["order.inspection_completed", "FAILED"],
+        ["order.inspection_completed", "FAILED"],
+        ["order.inspection_completed", "SUCCESS"],
+      ].sort(),
+    );
+  });
+
+  it("serialises a cancellation racing a shipment: one wins, stock moves at most once", async () => {
+    const staff = await verifiedStaff("STAFF");
+    const admin = await verifiedStaff("ADMIN");
+    const placed = await confirmedOnlineOrder({
+      sku: "CC-2",
+      stock: 4,
+      quantity: 2,
+    });
+    await startProcessing(staff.ctx, placed.orderId);
+    expect(await stockOf(placed.variantId)).toEqual({
+      stockOnHand: 2,
+      reserved: 0,
+    });
+
+    const [cancel, ship] = await Promise.allSettled([
+      cancelOrder(admin.ctx, placed.orderId, {
+        reason: "Race.",
+        confirmOrderNumber: placed.orderNumber,
+      }),
+      shipOrder(staff.ctx, placed.orderId, SHIP),
+    ]);
+    expect([cancel.status, ship.status].sort()).toEqual([
+      "fulfilled",
+      "rejected",
+    ]);
+    const snap = await orderSnapshot(placed.orderId);
+    if (cancel.status === "fulfilled") {
+      expect(snap.order.status).toBe("CANCELLED");
+      expect(snap.order.shipment).toBeNull();
+      expect(snap.adjustments.map((a) => a.delta)).toEqual([2]);
+      expect(await stockOf(placed.variantId)).toEqual({
+        stockOnHand: 4,
+        reserved: 0,
+      });
+    } else {
+      expect(snap.order.status).toBe("SHIPPED");
+      expect(snap.adjustments).toHaveLength(0);
+      expect(await stockOf(placed.variantId)).toEqual({
+        stockOnHand: 2,
+        reserved: 0,
+      });
+    }
+  });
+});

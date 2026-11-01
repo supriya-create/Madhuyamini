@@ -13,14 +13,17 @@ import { isAppError } from "@/server/errors";
 import { routes } from "@/lib/routes";
 
 import {
+  beginEnrolmentSchema,
   confirmEnrolmentSchema,
   recoveryCodeSchema,
+  regenerateRecoveryCodesSchema,
   totpCodeSchema,
   verifySecondFactorSchema,
 } from "./schemas";
 import {
   beginEnrolment,
   confirmEnrolment,
+  regenerateRecoveryCodes,
   verifySecondFactor,
 } from "./service";
 
@@ -47,14 +50,54 @@ export async function beginEnrolmentAction(formData: FormData): Promise<void> {
       `${routes.login}?next=${encodeURIComponent(routes.accountTwoFactor)}`,
     );
   const next = safeReturnPath(formData.get("next"), routes.accountTwoFactor);
+  const parsed = parseForm(
+    beginEnrolmentSchema,
+    pickFormValues(formData, ["password", "next"]),
+  );
+  if (!parsed.ok) {
+    redirect(`${routes.accountTwoFactor}?error=TWO_FACTOR_PASSWORD`);
+  }
+  let failure: string | null = null;
   try {
-    await beginEnrolment(user);
+    await beginEnrolment(user, parsed.data.password);
   } catch (error) {
-    redirect(
-      `${routes.accountTwoFactor}?error=${encodeURIComponent(message(error))}`,
-    );
+    failure = isAppError(error) ? error.code : "UNKNOWN";
+  }
+  if (failure !== null) {
+    // Only an error code travels in the URL; the page maps it to a message.
+    redirect(`${routes.accountTwoFactor}?error=${encodeURIComponent(failure)}`);
   }
   redirect(`${routes.accountTwoFactor}?next=${encodeURIComponent(next)}`);
+}
+
+export async function regenerateRecoveryCodesAction(
+  _prev: TwoFactorFormState,
+  formData: FormData,
+): Promise<TwoFactorFormState> {
+  const user = await getCurrentUser();
+  if (!user)
+    redirect(
+      `${routes.login}?next=${encodeURIComponent(routes.accountTwoFactor)}`,
+    );
+  const parsed = parseForm(
+    regenerateRecoveryCodesSchema,
+    pickFormValues(formData, ["code"]),
+  );
+  if (!parsed.ok) return parsed.state;
+  try {
+    const { recoveryCodes } = await regenerateRecoveryCodes(
+      user,
+      parsed.data.code,
+    );
+    return {
+      status: "success",
+      message:
+        "New recovery codes. The old ones no longer work; save these now, they will not be shown again.",
+      recoveryCodes,
+    };
+  } catch (error) {
+    return { status: "error", message: message(error) };
+  }
 }
 
 export async function confirmEnrolmentAction(

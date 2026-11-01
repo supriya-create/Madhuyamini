@@ -8,6 +8,7 @@ import {
   CustomerError,
   getCustomerDetail,
   getCustomerList,
+  getStaffDirectory,
   issueGrant,
   revealCustomer,
   revokeGrant,
@@ -452,5 +453,104 @@ describe("role changes (A11)", () => {
         .role,
     ).toBe("ADMIN");
     expect(new CustomerError("x").status).toBe(409);
+  });
+});
+
+describe("per-actor limits (audit regressions)", () => {
+  it("caps reveals, grants and role changes per actor and records the refusal", async () => {
+    const now = new Date();
+    const admin = await verifiedStaff("ADMIN", now);
+    const staff = await verifiedStaff("STAFF", now);
+    const customer = await customerWithAddress();
+
+    for (let i = 0; i < 30; i += 1) {
+      await revealCustomer(
+        admin.ctx,
+        customer.id,
+        { fields: ["email"], reason: `Check ${i}.` },
+        now,
+      );
+    }
+    await expect(
+      revealCustomer(
+        admin.ctx,
+        customer.id,
+        { fields: ["email"], reason: "One more." },
+        now,
+      ),
+    ).rejects.toMatchObject({ code: "ADMIN_RATE_LIMITED" });
+    expect(
+      await testDb.adminAuditLog.count({
+        where: {
+          action: "customer.pii.reveal",
+          outcome: "REFUSED",
+          errorCode: "ADMIN_RATE_LIMITED",
+        },
+      }),
+    ).toBe(1);
+
+    for (let i = 0; i < 20; i += 1) {
+      await issueGrant(
+        admin.ctx,
+        {
+          granteeId: staff.user.id,
+          customerId: customer.id,
+          fields: ["email"],
+          hours: 1,
+          reason: `Grant ${i}.`,
+        },
+        now,
+      );
+    }
+    await expect(
+      issueGrant(
+        admin.ctx,
+        {
+          granteeId: staff.user.id,
+          customerId: customer.id,
+          fields: ["email"],
+          hours: 1,
+          reason: "x",
+        },
+        now,
+      ),
+    ).rejects.toMatchObject({ code: "ADMIN_RATE_LIMITED" });
+
+    const target = await createStaffUser("CUSTOMER", "flip@example.com");
+    for (let i = 0; i < 10; i += 1) {
+      const role = i % 2 === 0 ? "STAFF" : "CUSTOMER";
+      await setRole(
+        admin.ctx,
+        target.id,
+        { role, reason: `Flip ${i}.`, confirmEmail: target.email },
+        now,
+      );
+    }
+    await expect(
+      setRole(
+        admin.ctx,
+        target.id,
+        { role: "STAFF", reason: "Once more.", confirmEmail: target.email },
+        now,
+      ),
+    ).rejects.toMatchObject({ code: "ADMIN_RATE_LIMITED" });
+    expect(
+      (await testDb.user.findUniqueOrThrow({ where: { id: target.id } })).role,
+    ).toBe("CUSTOMER");
+  });
+});
+
+describe("staff directory for the grant form (audit regression)", () => {
+  it("lists grantees for an ADMIN outside the re-authentication window, never for STAFF", async () => {
+    const now = new Date();
+    // Verified half an hour ago: the page still renders; the grant itself re-authenticates.
+    const admin = await verifiedStaff("ADMIN", minutesLater(now, -30));
+    const staff = await verifiedStaff("STAFF", now);
+    const directory = await getStaffDirectory(admin.ctx);
+    expect(directory.map((row) => row.id)).toContain(staff.user.id);
+    expect(directory.every((row) => row.role !== "CUSTOMER")).toBe(true);
+    await expect(getStaffDirectory(staff.ctx)).rejects.toBeInstanceOf(
+      ForbiddenCapabilityError,
+    );
   });
 });

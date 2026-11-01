@@ -35,3 +35,14 @@ export const verifySecondFactorSchema = z
     next: returnPathSchema.optional().or(z.literal("")),
   })
   .strict();
+
+export const beginEnrolmentSchema = z
+  .object({
+    password: z.string().min(1, "Enter your password").max(200),
+    next: returnPathSchema.optional().or(z.literal("")),
+  })
+  .strict();
+
+export const regenerateRecoveryCodesSchema = z
+  .object({ code: totpCodeSchema })
+  .strict();

@@ -27,6 +27,7 @@ import {
   writeAudit,
 } from "../audit";
 import { requirePermission } from "../authz";
+import { enforceActorLimit } from "../limits";
 import { maskEmail, maskPhone } from "../redact";
 import { resetTwoFactor } from "../security/service";
 import {
@@ -325,6 +326,10 @@ export async function issueGrant(
   now = new Date(),
 ): Promise<{ id: string }> {
   const policy = getAdminPolicy().pii;
+  await enforceActorLimit(ctx, "grant", getAdminPolicy().limits.grantPerActor, {
+    action: "customer.pii.grant",
+    targetType: "grant",
+  });
   return runAudited(
     {
       ctx,
@@ -445,10 +450,22 @@ export async function revealCustomer(
   now = new Date(),
 ): Promise<{ id: string; expiresAt: Date }> {
   await requirePermission(ctx, "customers.view", { now });
+  await enforceActorLimit(
+    ctx,
+    "reveal",
+    getAdminPolicy().limits.revealPerActor,
+    {
+      action: "customer.pii.reveal",
+      targetType: "user",
+      targetId: customerId,
+    },
+  );
   const fields = [...new Set(input.fields)];
   // ADMIN reveals on their own permission; STAFF need an active grant that covers every field.
   let grantId: string | null = null;
-  if (ctx.role !== "ADMIN") {
+  if (ctx.role === "ADMIN") {
+    await requirePermission(ctx, "customers.reveal", { now });
+  } else {
     const grants = await findActiveGrants(db, ctx.user.id, customerId, now);
     const covering = grants.find((grant) =>
       fields.every((field) => grant.fields.includes(field)),
@@ -542,6 +559,12 @@ export async function setRole(
   },
   now = new Date(),
 ): Promise<void> {
+  await enforceActorLimit(
+    ctx,
+    "role-change",
+    getAdminPolicy().limits.roleChangePerActor,
+    { action: "user.role.set", targetType: "user", targetId: userId },
+  );
   await runAudited(
     {
       ctx,

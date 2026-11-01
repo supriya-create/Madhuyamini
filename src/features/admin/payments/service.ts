@@ -24,6 +24,7 @@ import { AppError, NotFoundError } from "@/server/errors";
 import { getPaymentGateway } from "@/server/payments";
 
 import { runAudited, runAuditedExternal } from "../audit";
+import { enforceActorLimit } from "../limits";
 import { toAdminOrderListItem } from "../orders/types";
 import type { AdminOrderListItem } from "../orders/types";
 import { findRefund, listRefunds, listReviewOrders } from "./data";
@@ -420,6 +421,16 @@ export async function createRefund(
   input: { readonly amountInPaise: number; readonly reason: string },
   now = new Date(),
 ): Promise<{ reference: string }> {
+  await enforceActorLimit(
+    ctx,
+    "refund",
+    getAdminPolicy().limits.refundPerActor,
+    {
+      action: "refund.create",
+      targetType: "order",
+      targetId: orderId,
+    },
+  );
   return runAudited(
     {
       ctx,

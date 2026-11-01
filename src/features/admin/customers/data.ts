@@ -7,7 +7,7 @@ import { normalizeOrderNumber } from "@/features/orders/order-number";
 import type { StaffContext } from "@/server/auth/staff";
 import { db } from "@/server/db";
 
-import { requirePermission } from "../authz";
+import { ForbiddenCapabilityError, can, requirePermission } from "../authz";
 
 /**
  * Customer reads (docs/admin.md §5.7). Lists never return address lines or
@@ -202,7 +202,13 @@ export async function listStaffUsers(
   ctx: StaffContext,
   tx: Tx = db,
 ): Promise<Array<{ id: string; name: string; email: string; role: UserRole }>> {
+  // Staff addresses are for the grant form, so only grant issuers see them.
+  // A read: the live context and the role decide, not the re-authentication
+  // window (issuing the grant itself re-authenticates).
   await requirePermission(ctx, "customers.view", { tx });
+  if (!can(ctx.role, "customers.grant")) {
+    throw new ForbiddenCapabilityError("customers.grant");
+  }
   return tx.user.findMany({
     where: { role: { in: ["STAFF", "ADMIN"] } },
     select: { id: true, name: true, email: true, role: true },

@@ -164,6 +164,21 @@ const rawEnvSchema = z
       });
     }
 
+    // Signed uploads must be capped at Cloudinary itself, not only in the browser.
+    if (
+      value.CLOUDINARY_CLOUD_NAME &&
+      value.CLOUDINARY_API_KEY &&
+      value.CLOUDINARY_API_SECRET &&
+      !value.CLOUDINARY_UPLOAD_PRESET
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["CLOUDINARY_UPLOAD_PRESET"],
+        message:
+          "CLOUDINARY_UPLOAD_PRESET (a signed preset enforcing size and dimension limits) is required in production",
+      });
+    }
+
     // The fake payment gateway accepts anything; it must never reach production.
     if (value.PAYMENT_GATEWAY === "fake") {
       ctx.addIssue({

@@ -20,6 +20,7 @@ export {
   writeAudit,
 } from "./audit-log";
 export type { AuditActor, AuditEntry } from "./audit-log";
+import type { AuditEntry } from "./audit-log";
 
 /**
  * Audit atomicity (docs/admin.md §6). `runAudited` is the one entry point
@@ -49,6 +50,35 @@ export interface AuditedWork<T> {
   readonly targetId?: string;
   /** Replaces the reason given up front (for example with provider evidence). */
   readonly reason?: string;
+}
+
+/**
+ * A refusal must leave a trace even when the context was forged with an
+ * actor id the database does not know: the row then carries no actor id
+ * and a label naming what was presented.
+ */
+async function writeRefused(
+  base: Omit<AuditEntry, "outcome" | "errorCode">,
+  error: unknown,
+): Promise<void> {
+  const entry: AuditEntry = {
+    ...base,
+    outcome: "REFUSED",
+    errorCode: isAppError(error) ? error.code : "UNKNOWN",
+  };
+  try {
+    await writeAudit(entry);
+  } catch {
+    await writeAudit({
+      ...entry,
+      actor: {
+        ...base.actor,
+        actorId: null,
+        actorLabel: `unverified:${base.actor.actorId ?? "unknown"}`,
+        sessionId: null,
+      },
+    }).catch(() => undefined);
+  }
 }
 
 /**
@@ -83,11 +113,7 @@ export async function runAudited<T>(
       now: options.now,
     });
   } catch (error) {
-    await writeAudit({
-      ...base,
-      outcome: "REFUSED",
-      errorCode: isAppError(error) ? error.code : "UNKNOWN",
-    }).catch(() => undefined);
+    await writeRefused(base, error);
     throw error;
   }
 
@@ -148,11 +174,7 @@ export async function runAuditedExternal<T>(
       now: options.now,
     });
   } catch (error) {
-    await writeAudit({
-      ...base,
-      outcome: "REFUSED",
-      errorCode: isAppError(error) ? error.code : "UNKNOWN",
-    }).catch(() => undefined);
+    await writeRefused(base, error);
     throw error;
   }
   try {

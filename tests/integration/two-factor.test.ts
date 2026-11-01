@@ -6,10 +6,20 @@ import {
   beginEnrolment,
   confirmEnrolment,
   pendingEnrolment,
+  regenerateRecoveryCodes,
   resetTwoFactor,
   securityStatus,
   verifySecondFactor,
 } from "@/features/admin/security/service";
+import { rateLimitKey } from "@/server/auth/rate-limit-rules";
+import { env } from "@/server/env";
+import {
+  currentStep,
+  decryptSecret,
+  encryptSecret,
+  generateTotpSecret,
+  totpAt,
+} from "@/server/security/totp";
 import {
   PromoteError,
   promoteToAdmin,
@@ -19,6 +29,7 @@ import { StaffGateError, resolveStaffContext } from "@/server/auth/staff";
 import { seedStaff } from "../../prisma/seed/staff";
 import { resetDatabase, testDb } from "./db";
 import {
+  STAFF_PASSWORD,
   codeFor,
   createSession,
   createStaffUser,
@@ -39,11 +50,16 @@ afterAll(() => testDb.$disconnect());
 const code = (error: unknown) =>
   error instanceof TwoFactorError ? error.code : String(error);
 
+/** A code for a raw secret (rotation test writes the row itself). */
+function totpCodeFor(secret: Buffer, now: Date): string {
+  return totpAt(secret, currentStep(now, 30), 6);
+}
+
 describe("enrolment", () => {
   it("counts only after a valid code, then issues hashed recovery codes and verifies this session", async () => {
     const now = new Date();
     const user = await createSession(await createStaffUser("STAFF"));
-    const start = await beginEnrolment(user, now);
+    const start = await beginEnrolment(user, STAFF_PASSWORD, now);
     expect(start.secretBase32).toMatch(/^[A-Z2-7]{32}$/);
     expect(start.uri).toMatch(/^otpauth:\/\/totp\/Madhuyamini(:|%3A)/);
     expect(start.uri).toContain(`secret=${start.secretBase32}`);
@@ -109,7 +125,7 @@ describe("enrolment", () => {
   it("expires a pending enrolment and lets the user start again", async () => {
     const now = new Date();
     const user = await createSession(await createStaffUser("STAFF"));
-    const start = await beginEnrolment(user, now);
+    const start = await beginEnrolment(user, STAFF_PASSWORD, now);
     const later = minutesLater(now, 16);
     expect(await pendingEnrolment(user, later)).toBeNull();
     await expect(
@@ -117,7 +133,7 @@ describe("enrolment", () => {
     ).rejects.toSatisfy(
       (error) => code(error) === "TWO_FACTOR_ENROLMENT_EXPIRED",
     );
-    const restart = await beginEnrolment(user, later);
+    const restart = await beginEnrolment(user, STAFF_PASSWORD, later);
     expect(restart.secretBase32).not.toBe(start.secretBase32);
     await confirmEnrolment(user, codeFor(restart.secretBase32, later), later);
     expect((await securityStatus(user)).enabled).toBe(true);
@@ -125,7 +141,7 @@ describe("enrolment", () => {
 
   it("refuses re-enrolment once enabled until an ADMIN resets it", async () => {
     const staff = await verifiedStaff("STAFF");
-    await expect(beginEnrolment(staff.user)).rejects.toSatisfy(
+    await expect(beginEnrolment(staff.user, STAFF_PASSWORD)).rejects.toSatisfy(
       (error) => code(error) === "TWO_FACTOR_ALREADY_ENABLED",
     );
 
@@ -154,13 +170,13 @@ describe("enrolment", () => {
       await testDb.notificationOutbox.count({ where: { kind: "ops.alert" } }),
     ).toBe(1);
 
-    const again = await beginEnrolment(staff.user);
+    const again = await beginEnrolment(staff.user, STAFF_PASSWORD);
     expect(again.secretBase32).toBeTruthy();
   });
 
   it("is for staff accounts only, and STAFF cannot reset anyone", async () => {
     const customer = await createSession(await createStaffUser("CUSTOMER"));
-    await expect(beginEnrolment(customer)).rejects.toSatisfy(
+    await expect(beginEnrolment(customer, STAFF_PASSWORD)).rejects.toSatisfy(
       (error) => code(error) === "TWO_FACTOR_NOT_AVAILABLE",
     );
     const staff = await verifiedStaff("STAFF");
@@ -492,5 +508,146 @@ describe("development staff seed", () => {
     }
     // Seeded staff are not enrolled: the first sign-in sets up the second factor.
     expect(await testDb.staffTwoFactor.count()).toBe(0);
+  });
+});
+
+describe("audit regressions: enrolment password, regeneration, rotation, recovery alerts", () => {
+  it("starts enrolment only with the account password and audits a wrong one", async () => {
+    const user = await createSession(await createStaffUser("STAFF"));
+    await expect(beginEnrolment(user, "not the password")).rejects.toSatisfy(
+      (error) => code(error) === "TWO_FACTOR_PASSWORD",
+    );
+    expect(
+      await testDb.staffTwoFactor.count({ where: { userId: user.id } }),
+    ).toBe(0);
+    const refused = await testDb.adminAuditLog.findFirstOrThrow({
+      where: { action: "security.two_factor.begin", outcome: "REFUSED" },
+    });
+    expect(refused.errorCode).toBe("TWO_FACTOR_PASSWORD");
+    const start = await beginEnrolment(user, STAFF_PASSWORD);
+    expect(start.secretBase32).toMatch(/^[A-Z2-7]{32}$/);
+  });
+
+  it("issues new recovery codes on a fresh code, invalidating the old set, with replay refused", async () => {
+    const now = new Date();
+    const row = await createStaffUser("STAFF");
+    const user = await createSession(row);
+    const { secretBase32, recoveryCodes } = await enrolAndVerify(user, now);
+    const later = new Date(now.getTime() + 30_000);
+
+    await expect(
+      regenerateRecoveryCodes(user, "000000", later),
+    ).rejects.toSatisfy((error) => code(error) === "TWO_FACTOR_INVALID_CODE");
+    const fresh = await regenerateRecoveryCodes(
+      user,
+      codeFor(secretBase32, later),
+      later,
+    );
+    expect(fresh.recoveryCodes).toHaveLength(10);
+    expect(fresh.recoveryCodes.some((c) => recoveryCodes.includes(c))).toBe(
+      false,
+    );
+    // The same code cannot be used again.
+    await expect(
+      regenerateRecoveryCodes(user, codeFor(secretBase32, later), later),
+    ).rejects.toSatisfy((error) => code(error) === "TWO_FACTOR_INVALID_CODE");
+
+    const [old] = recoveryCodes;
+    const [current] = fresh.recoveryCodes;
+    if (!old || !current) throw new Error("no codes");
+    // The attempts above used up the per-user code limit (tested on its own
+    // below); clear it so the recovery checks measure codes, not the limiter.
+    await testDb.rateLimit.deleteMany({
+      where: { key: rateLimitKey("two-factor:totp", row.id) },
+    });
+    const second = await createSession(row);
+    await expect(
+      verifySecondFactor(
+        second,
+        { kind: "recovery", code: old },
+        { now: later },
+      ),
+    ).rejects.toSatisfy((error) => code(error) === "TWO_FACTOR_INVALID_CODE");
+    await verifySecondFactor(
+      second,
+      { kind: "recovery", code: current },
+      { now: later },
+    );
+    expect((await resolveStaffContext(second)).ok).toBe(true);
+    const audit = await testDb.adminAuditLog.findMany({
+      where: { action: "security.recovery_codes.regenerate" },
+      orderBy: { createdAt: "asc" },
+    });
+    expect(audit.map((a) => [a.outcome, a.errorCode])).toEqual([
+      ["REFUSED", "TWO_FACTOR_INVALID_CODE"],
+      ["SUCCESS", null],
+      ["REFUSED", "TWO_FACTOR_REPLAYED"],
+    ]);
+  });
+
+  it("re-encrypts a secret under the current key once it is accepted after rotation", async () => {
+    const current = env.admin.totpKey;
+    const previous = env.admin.totpKeyPrevious;
+    if (!current || !previous)
+      throw new Error("rotation keys missing in the test env");
+    const now = new Date();
+    const row = await createStaffUser("STAFF");
+    const user = await createSession(row);
+    const secret = generateTotpSecret(20);
+    await testDb.staffTwoFactor.create({
+      data: {
+        userId: row.id,
+        secretCiphertext: encryptSecret(secret, previous),
+        keyVersion: 1,
+        enabledAt: now,
+        createdAt: now,
+      },
+    });
+    const later = new Date(now.getTime() + 30_000);
+    await verifySecondFactor(
+      user,
+      { kind: "totp", code: totpCodeFor(secret, later) },
+      { now: later },
+    );
+    const stored = await testDb.staffTwoFactor.findUniqueOrThrow({
+      where: { userId: row.id },
+    });
+    expect(stored.keyVersion).toBe(2);
+    expect(decryptSecret(stored.secretCiphertext, current).equals(secret)).toBe(
+      true,
+    );
+    expect(() => decryptSecret(stored.secretCiphertext, previous)).toThrow();
+    expect((await resolveStaffContext(user)).ok).toBe(true);
+  });
+
+  it("alerts the owner inbox when recovery-code attempts hit the limit", async () => {
+    const now = new Date();
+    const row = await createStaffUser("STAFF");
+    const enrolled = await createSession(row);
+    await enrolAndVerify(enrolled, now);
+    const session = await createSession(row);
+    for (let i = 0; i < 3; i += 1) {
+      await expect(
+        verifySecondFactor(
+          session,
+          { kind: "recovery", code: "ZZZZZZZZZZ" },
+          { now },
+        ),
+      ).rejects.toSatisfy((error) => code(error) === "TWO_FACTOR_INVALID_CODE");
+    }
+    await expect(
+      verifySecondFactor(
+        session,
+        { kind: "recovery", code: "ZZZZZZZZZZ" },
+        { now },
+      ),
+    ).rejects.toSatisfy((error) => code(error) === "TWO_FACTOR_RATE_LIMITED");
+    const alerts = await testDb.notificationOutbox.findMany({
+      where: {
+        kind: "ops.alert",
+        dedupeKey: { startsWith: `ops.alert:recovery-limit:${row.id}:` },
+      },
+    });
+    expect(alerts).toHaveLength(1);
   });
 });

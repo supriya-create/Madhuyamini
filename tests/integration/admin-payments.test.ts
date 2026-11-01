@@ -491,3 +491,56 @@ describe("refunds (ADMIN, re-auth)", () => {
     ).toEqual(["FAILED", "FAILED", "SUCCESS"]);
   });
 });
+
+describe("refund regressions", () => {
+  it("queues a fresh refund on cancellation even when an earlier refund of the same attempt failed", async () => {
+    const admin = await verifiedStaff("ADMIN");
+    const placed = await confirmedOnlineOrder({ sku: "RG-1" });
+    const { reference } = await createRefund(admin.ctx, placed.orderId, {
+      amountInPaise: 1000,
+      reason: "Goodwill.",
+    });
+    await testDb.refund.update({
+      where: { reference },
+      data: { status: "FAILED", attempts: 5, lastError: "Provider rejected" },
+    });
+    await cancelOrder(admin.ctx, placed.orderId, {
+      reason: "Cannot fulfil.",
+      confirmOrderNumber: placed.orderNumber,
+    });
+    const refunds = await testDb.refund.findMany({
+      where: { orderId: placed.orderId },
+      orderBy: { createdAt: "asc" },
+    });
+    expect(
+      refunds.map((r) => [r.reference, r.status, r.amountInPaise]),
+    ).toEqual([
+      [`${placed.orderNumber}-R1`, "FAILED", 1000],
+      [`${placed.orderNumber}-R1-2`, "INITIATED", placed.totalInPaise],
+    ]);
+    const cancelled = await orderSnapshot(placed.orderId);
+    expect(cancelled.order.status).toBe("CANCELLED");
+    const mail = cancelled.outbox.find((row) => row.kind === "order.cancelled");
+    expect(mail?.payload).toMatchObject({ refundQueued: "yes" });
+  });
+
+  it("caps refund creation per actor", async () => {
+    const admin = await verifiedStaff("ADMIN");
+    const placed = await confirmedOnlineOrder({ sku: "RG-2" });
+    for (let i = 0; i < 20; i += 1) {
+      await createRefund(admin.ctx, placed.orderId, {
+        amountInPaise: 1,
+        reason: `Paise ${i}.`,
+      });
+    }
+    await expect(
+      createRefund(admin.ctx, placed.orderId, {
+        amountInPaise: 1,
+        reason: "Too many.",
+      }),
+    ).rejects.toMatchObject({ code: "ADMIN_RATE_LIMITED" });
+    expect(
+      await testDb.refund.count({ where: { orderId: placed.orderId } }),
+    ).toBe(20);
+  });
+});

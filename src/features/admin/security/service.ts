@@ -1,9 +1,15 @@
 import "server-only";
 
+import { verifyPassword } from "better-auth/crypto";
+
 import { getAdminPolicy } from "@/config/admin-policy";
 import { minutesToMs } from "@/config/checkout-policy";
 import type { Prisma } from "@/generated/prisma/client";
-import { consumeRateLimit, rateLimitKey } from "@/server/auth/rate-limit";
+import {
+  authRateLimits,
+  consumeRateLimit,
+  rateLimitKey,
+} from "@/server/auth/rate-limit";
 import type { CurrentUser } from "@/server/auth/current-user";
 import { StaffGateError } from "@/server/auth/staff";
 import type { StaffContext } from "@/server/auth/staff";
@@ -47,6 +53,7 @@ export class TwoFactorError extends AppError {
       | "TWO_FACTOR_NOT_ENROLLED"
       | "TWO_FACTOR_ENROLMENT_EXPIRED"
       | "TWO_FACTOR_INVALID_CODE"
+      | "TWO_FACTOR_PASSWORD"
       | "TWO_FACTOR_RATE_LIMITED",
     status = 400,
   ) {
@@ -81,14 +88,33 @@ function keys(): { current: Buffer; previous: Buffer | null } {
   return { current, previous: env.admin.totpKeyPrevious };
 }
 
-function decryptWithRotation(ciphertext: string): Buffer {
+/** Decrypts with the current key, falling back to the previous one during rotation. */
+function decryptWithRotation(ciphertext: string): {
+  secret: Buffer;
+  rotated: boolean;
+} {
   const { current, previous } = keys();
   try {
-    return decryptSecret(ciphertext, current);
+    return { secret: decryptSecret(ciphertext, current), rotated: false };
   } catch (error) {
     if (!previous) throw error;
-    return decryptSecret(ciphertext, previous);
+    return { secret: decryptSecret(ciphertext, previous), rotated: true };
   }
+}
+
+/** A secret that still decrypts only under the previous key is re-encrypted on the next acceptance. */
+async function reencrypt(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  secret: Buffer,
+): Promise<void> {
+  await tx.staffTwoFactor.update({
+    where: { userId },
+    data: {
+      secretCiphertext: encryptSecret(secret, keys().current),
+      keyVersion: { increment: 1 },
+    },
+  });
 }
 
 function requireStaffRole(user: CurrentUser): void {
@@ -104,8 +130,32 @@ function requireStaffRole(user: CurrentUser): void {
 async function limit(
   key: string,
   rule: { windowSeconds: number; max: number },
+  onTrip?: () => Promise<void>,
 ) {
   const outcome = await consumeRateLimit(key, rule);
+  if (!outcome.allowed) {
+    if (onTrip) await onTrip().catch(() => undefined);
+    throw new TwoFactorError(
+      "Too many attempts. Please wait before trying again.",
+      "TWO_FACTOR_RATE_LIMITED",
+      429,
+    );
+  }
+}
+
+/**
+ * Enrolment starts with the account's password (docs/admin.md §5.9), so a
+ * hijacked session alone cannot bind a new authenticator. Shares the
+ * sign-in limiter, and leaves a REFUSED audit row on a wrong password.
+ */
+async function requirePassword(
+  user: CurrentUser,
+  password: string,
+): Promise<void> {
+  const outcome = await consumeRateLimit(
+    rateLimitKey("sign-in:email", user.email),
+    authRateLimits.signInByEmail,
+  );
   if (!outcome.allowed) {
     throw new TwoFactorError(
       "Too many attempts. Please wait before trying again.",
@@ -113,6 +163,43 @@ async function limit(
       429,
     );
   }
+  const account = await db.account.findFirst({
+    where: { userId: user.id, providerId: "credential" },
+    select: { password: true },
+  });
+  const valid =
+    typeof account?.password === "string" &&
+    (await verifyPassword({ hash: account.password, password }));
+  if (!valid) {
+    await writeAudit({
+      actor: actorOf(user),
+      action: "security.two_factor.begin",
+      targetType: "two_factor",
+      targetId: user.id,
+      outcome: "REFUSED",
+      errorCode: "TWO_FACTOR_PASSWORD",
+    });
+    throw new TwoFactorError(
+      "That password is not right.",
+      "TWO_FACTOR_PASSWORD",
+      403,
+    );
+  }
+}
+
+async function alertRecoveryLimit(user: CurrentUser, now: Date): Promise<void> {
+  const windowMs = getAdminPolicy().limits.recoveryPerUser.windowSeconds * 1000; // policy-literal-ok: s → ms
+  const windowStart = Math.floor(now.getTime() / windowMs);
+  await db.$transaction((tx) =>
+    enqueueOpsAlert(tx, {
+      key: `recovery-limit:${user.id}:${windowStart}`,
+      orderId: null,
+      payload: {
+        reason: "Repeated recovery-code attempts on a staff account",
+        userId: user.id,
+      },
+    }),
+  );
 }
 
 export interface EnrolmentStart {
@@ -124,6 +211,7 @@ export interface EnrolmentStart {
 /** Creates (or replaces) a pending enrolment; nothing counts until confirmed. */
 export async function beginEnrolment(
   user: CurrentUser,
+  password: string,
   now = new Date(),
 ): Promise<EnrolmentStart> {
   requireStaffRole(user);
@@ -133,6 +221,7 @@ export async function beginEnrolment(
     policy.limits.enrolmentPerUser,
   );
   const { current } = keys();
+  await requirePassword(user, password);
 
   const existing = await db.staffTwoFactor.findUnique({
     where: { userId: user.id },
@@ -203,7 +292,7 @@ export async function pendingEnrolment(
     minutesToMs(policy.sessions.enrolmentMinutes)
   )
     return null;
-  const secret = decryptWithRotation(row.secretCiphertext);
+  const { secret } = decryptWithRotation(row.secretCiphertext);
   return {
     secretBase32: base32Encode(secret),
     uri: otpauthUri({
@@ -261,7 +350,7 @@ export async function confirmEnrolment(
       "TWO_FACTOR_ENROLMENT_EXPIRED",
     );
   }
-  const secret = decryptWithRotation(row.secretCiphertext);
+  const { secret, rotated } = decryptWithRotation(row.secretCiphertext);
   const step = findMatchingStep(secret, code, now, policy.totp);
   if (step === null) {
     await writeAudit({
@@ -291,6 +380,7 @@ export async function confirmEnrolment(
         409,
       );
     }
+    if (rotated) await reencrypt(tx, user.id, secret);
     await tx.staffRecoveryCode.deleteMany({ where: { userId: user.id } });
     await tx.staffRecoveryCode.createMany({
       data: plainCodes.map((plain) => ({
@@ -315,6 +405,87 @@ export async function confirmEnrolment(
       tx,
     );
   });
+  return { recoveryCodes: plainCodes };
+}
+
+/**
+ * A fresh set of recovery codes, on a fresh TOTP code (docs/admin.md §5.9):
+ * the old set is invalidated in the same transaction. The code is subject
+ * to the same replay rule as sign-in.
+ */
+export async function regenerateRecoveryCodes(
+  user: CurrentUser,
+  code: string,
+  now = new Date(),
+): Promise<EnrolmentConfirmed> {
+  requireStaffRole(user);
+  const policy = getAdminPolicy();
+  await limit(
+    rateLimitKey("two-factor:totp", user.id),
+    policy.limits.totpPerUser,
+  );
+  const row = await db.staffTwoFactor.findUnique({
+    where: { userId: user.id },
+  });
+  if (!row?.enabledAt) throw new StaffGateError("not_enrolled");
+  const { secret, rotated } = decryptWithRotation(row.secretCiphertext);
+  const step = findMatchingStep(secret, code, now, policy.totp);
+  const actor = actorOf(user);
+  const refused = (errorCode: string) =>
+    writeAudit({
+      actor,
+      action: "security.recovery_codes.regenerate",
+      targetType: "two_factor",
+      targetId: user.id,
+      outcome: "REFUSED",
+      errorCode,
+    });
+  if (step === null) {
+    await refused("TWO_FACTOR_INVALID_CODE");
+    throw INVALID();
+  }
+  const plainCodes = generateRecoveryCodes(
+    policy.recovery.codeCount,
+    policy.recovery.codeLength,
+  );
+  const accepted = await db.$transaction(async (tx) => {
+    const moved = await tx.staffTwoFactor.updateMany({
+      where: {
+        userId: user.id,
+        OR: [{ lastAcceptedStep: null }, { lastAcceptedStep: { lt: step } }],
+      },
+      data: { lastAcceptedStep: step },
+    });
+    if (moved.count !== 1) return false;
+    if (rotated) await reencrypt(tx, user.id, secret);
+    await tx.staffRecoveryCode.deleteMany({ where: { userId: user.id } });
+    await tx.staffRecoveryCode.createMany({
+      data: plainCodes.map((plain) => ({
+        userId: user.id,
+        codeHash: hashRecoveryCode(plain, user.id),
+      })),
+    });
+    await writeAudit(
+      {
+        actor,
+        action: "security.recovery_codes.regenerate",
+        targetType: "two_factor",
+        targetId: user.id,
+        outcome: "SUCCESS",
+        after: {
+          userId: user.id,
+          enabled: true,
+          recoveryCodesRemaining: plainCodes.length,
+        },
+      },
+      tx,
+    );
+    return true;
+  });
+  if (!accepted) {
+    await refused("TWO_FACTOR_REPLAYED");
+    throw INVALID();
+  }
   return { recoveryCodes: plainCodes };
 }
 
@@ -380,7 +551,7 @@ export async function verifySecondFactor(
     });
 
   if (input.kind === "totp") {
-    const secret = decryptWithRotation(row.secretCiphertext);
+    const { secret, rotated } = decryptWithRotation(row.secretCiphertext);
     const step = findMatchingStep(secret, input.code, now, policy.totp);
     if (step === null) {
       await refused("TWO_FACTOR_INVALID_CODE", "security.two_factor.verify");
@@ -397,6 +568,7 @@ export async function verifySecondFactor(
         data: { lastAcceptedStep: step },
       });
       if (moved.count !== 1) return false;
+      if (rotated) await reencrypt(tx, user.id, secret);
       await verifySession(tx, user, "TOTP", now);
       await writeAudit(
         {
@@ -422,6 +594,8 @@ export async function verifySecondFactor(
   await limit(
     rateLimitKey("two-factor:recovery", user.id),
     policy.limits.recoveryPerUser,
+    // Repeated recovery-code guessing is worth a human's attention.
+    () => alertRecoveryLimit(user, now),
   );
   const codeHash = hashRecoveryCode(input.code, user.id);
   const accepted = await db.$transaction(async (tx) => {

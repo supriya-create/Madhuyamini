@@ -333,3 +333,33 @@ describe("admin and upload settings", () => {
     ).toBe("madhuyamini-signed");
   });
 });
+
+describe("production upload safety", () => {
+  const production = {
+    SITE_ENV: "production",
+    SITE_URL: "https://madhuyamini.example",
+    EMAIL_TRANSPORT: "resend",
+    RESEND_API_KEY: "re_test",
+    PAYMENT_GATEWAY: "razorpay",
+    RAZORPAY_KEY_ID: "rzp_live_x",
+    RAZORPAY_KEY_SECRET: "secret",
+    RAZORPAY_WEBHOOK_SECRET: "whsec",
+    CLOUDINARY_CLOUD_NAME: "demo",
+    CLOUDINARY_API_KEY: "123",
+    CLOUDINARY_API_SECRET: "shh",
+  };
+
+  it("requires a signed upload preset when Cloudinary is configured in production", () => {
+    expect(() => parseEnv(withDb(production))).toThrow(
+      /CLOUDINARY_UPLOAD_PRESET/,
+    );
+    expect(
+      parseEnv(
+        withDb({
+          ...production,
+          CLOUDINARY_UPLOAD_PRESET: "madhuyamini-signed",
+        }),
+      ).cloudinary?.uploadPreset,
+    ).toBe("madhuyamini-signed");
+  });
+});

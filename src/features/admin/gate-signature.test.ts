@@ -26,6 +26,7 @@ const PRE_GATE = new Set([
   "pendingEnrolment",
   "confirmEnrolment",
   "verifySecondFactor",
+  "regenerateRecoveryCodes",
   "securityStatus",
 ]);
 
