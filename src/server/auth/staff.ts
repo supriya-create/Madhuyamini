@@ -117,11 +117,20 @@ export const getStaffContext = cache(async (): Promise<StaffResolution> =>
   resolveStaffContext(await getCurrentUser()),
 );
 
-/** For services and actions: throws when the gate is not passed. */
-export async function requireStaffSession(): Promise<StaffContext> {
+/**
+ * For pages and Server Actions: sends the visitor where the gate says
+ * (sign-in, enrolment or verification, with `next` as the return path), and
+ * shows customers the storefront's not-found page. Pages and layouts render
+ * in parallel, so a page must redirect for itself rather than throw and
+ * rely on the layout.
+ */
+export async function requireStaffSession(
+  next: string = routes.admin,
+): Promise<StaffContext> {
   const resolution = await getStaffContext();
-  if (!resolution.ok) throw new StaffGateError(resolution.reason);
-  return resolution.ctx;
+  if (resolution.ok) return resolution.ctx;
+  if (resolution.reason === "forbidden") notFound();
+  redirect(redirectForGate(resolution.reason, next));
 }
 
 /**
@@ -132,10 +141,7 @@ export async function requireStaffSession(): Promise<StaffContext> {
 export async function requireStaffSessionOrRedirect(
   next: string,
 ): Promise<StaffContext> {
-  const resolution = await getStaffContext();
-  if (resolution.ok) return resolution.ctx;
-  if (resolution.reason === "forbidden") notFound();
-  redirect(redirectForGate(resolution.reason, next));
+  return requireStaffSession(next);
 }
 
 export function redirectForGate(
