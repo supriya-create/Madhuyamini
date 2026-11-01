@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import styles from "@/components/admin/Admin.module.css";
+import { TableWrap } from "@/components/admin/TableWrap";
 import { AdminActionForm } from "@/components/admin/AdminActionForm";
 import { AdminPageHeader } from "@/components/admin/AdminShell";
 import { Badge } from "@/components/admin/orders/StatusBadge";
@@ -105,7 +106,7 @@ export default async function CustomersPage({
       {list.items.length === 0 ? (
         <p className={styles.empty}>No accounts match.</p>
       ) : (
-        <div className={styles.tableWrap}>
+        <TableWrap label="Accounts">
           <table className={styles.table}>
             <thead>
               <tr>
@@ -152,7 +153,7 @@ export default async function CustomersPage({
               ))}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
       )}
       {list.pageCount > 1 ? (
         <nav className={styles.pagination} aria-label="Pages">

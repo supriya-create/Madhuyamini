@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import styles from "@/components/admin/Admin.module.css";
+import { TableWrap } from "@/components/admin/TableWrap";
 import { AdminActionForm } from "@/components/admin/AdminActionForm";
 import { AdminPageHeader } from "@/components/admin/AdminShell";
 import { Badge, StatusBadge } from "@/components/admin/orders/StatusBadge";
@@ -177,7 +178,7 @@ export default async function CustomerPage({
             {customer.orders.length === 0 ? (
               <p className={styles.muted}>No orders.</p>
             ) : (
-              <div className={styles.tableWrap}>
+              <TableWrap label="Orders">
                 <table className={styles.table}>
                   <thead>
                     <tr>
@@ -214,7 +215,7 @@ export default async function CustomerPage({
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </TableWrap>
             )}
           </section>
           <section className={styles.panel} aria-labelledby="customer-grants">

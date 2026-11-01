@@ -1,4 +1,5 @@
 import styles from "@/components/admin/Admin.module.css";
+import { TableWrap } from "@/components/admin/TableWrap";
 import { AdminActionForm } from "@/components/admin/AdminActionForm";
 import { runJobAction } from "@/features/admin/operations/actions";
 import type { OperationsCounts } from "@/features/admin/operations/data";
@@ -64,7 +65,7 @@ export function JobsPanel({
         <h2 id="ops-queues" className={styles.panelTitle}>
           Queues
         </h2>
-        <div className={styles.tableWrap}>
+        <TableWrap label="Queues">
           <table className={styles.table}>
             <thead>
               <tr>
@@ -82,7 +83,7 @@ export function JobsPanel({
               <QueueRow label="Refunds" counts={counts.refunds} />
             </tbody>
           </table>
-        </div>
+        </TableWrap>
         <dl className={styles.dl}>
           <dt>Unpaid orders past deadline</dt>
           <dd>{counts.pendingOrdersPastDeadline}</dd>

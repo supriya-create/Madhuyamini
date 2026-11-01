@@ -741,3 +741,50 @@ Ordered as §12; each box is a gate (typecheck, lint, Prettier, unit, integratio
 | Brand inputs (D2)                | The production build intentionally fails until the hero placeholder is replaced; products have no photography            | Supply logo, hero and product imagery (uploadable through Phase 7 once built), artist details, contact and social details                         |
 | Backups and recovery             | Orders, payments and the audit log are money records                                                                     | Point-in-time recovery on the hosted database (Phase 11)                                                                                          |
 | CSP and monitoring               | Razorpay domains must be allowed by the eventual CSP; FAILED rows currently alert only by email                          | Phase 10 (D8, D9)                                                                                                                                 |
+
+---
+
+## 17. Implementation notes (1 November 2026)
+
+Phase 7 was built in the seven gated steps of §15 (commits `437caa1`, `d25021e`, `a2f9c27`, `c901bc5`, `467f788`, `18f0c72` and the closing commit). Where the implementation settled a detail the proposal left open, or deviated from it for a reason found during the build, the decision is recorded here.
+
+### 17.1 Gate and audit
+
+- **One audit write per success.** `admin_audit_log` is append-only (trigger plus the runtime role's privileges), so `runAudited` cannot create a row first and fill in snapshots later. It generates the audit id up front, hands it to the work (inventory adjustments store it in `audit_id`, a plain column with no foreign key so the row can be written last), and inserts the `SUCCESS` row as the final statement of the same transaction. `REFUSED` and `FAILED` rows are written in their own transaction after the rollback, as designed.
+- **Trigger error code.** The immutability trigger raises with the default SQLSTATE (`P0001`) rather than `restrict_violation`: Prisma maps class-23 codes to its foreign-key error and hides the message, whereas `P0001` reaches the application and the tests as "table … is append-only".
+- **Outcomes.** `REFUSED` means authorisation: a missing capability, a stale second factor, or a reveal without an active grant. A business rule that refuses inside the work (a transition that does not apply, an amount that does not match, stock that would undercut held units) rolls back and is recorded as `FAILED` with its error code, so the two can be told apart in the audit browser.
+- **The admin layout and the URL.** Layouts cannot read the request path, so `proxy.ts` overwrites a request header with it on every `/admin` request; the layout uses it only as the return path after sign-in or re-authentication, through `safeReturnPath`.
+- **Operations that must talk to a provider** (re-check, attach a payment, external refunds, run a job, verification resend, CSV export) use `runAuditedExternal`: authorise first, run with no transaction open, record afterwards. Their inner writes keep their own transactions.
+
+### 17.2 Orders, payments and stock
+
+- **Captured amount as evidence.** A mismatch leaves the attempt's own amount untouched (Phase 6), so the captured amount comes from the `payment.captured` event the capture recorded. Refund ceilings, the underpayment check in "accept mismatch" and the refund queue all use that evidence.
+- **Partial refunds.** An attempt becomes `REFUNDED` only once processed refunds cover the captured amount; earlier refunds leave it `CAPTURED` so further refunds remain possible. The fake gateway now refuses a refund beyond the captured amount and marks the payment refunded only when the total reaches it, like the provider.
+- **Inspection.** Units received back enter stock as `RESTOCK_ON_RETURN` (+received), then damaged units leave it as `WRITE_OFF` (−damaged), so the ledger shows both what came back and what was lost; both rows carry the inspector, the reason and the audit id.
+- **Carrier loss** records no inventory rows: the units never came back, so stock is genuinely unchanged. The loss is on the shipment (claim reference), the order event (per-SKU quantities) and the audit snapshot (`writtenOff`), and the customer is refunded.
+- **Cash on delivery.** A delivery failure on a COD order records `cod_refused` on the attempt whatever the failure reason; the failure reason itself is on the shipment. Collection needs the exact amount and a delivered order, or a reason at handover.
+- **Deleting catalogue rows.** Because the stock ledger is immutable, a variant with any movement (including its initial stock) and a product containing one cannot be deleted; they are archived or deactivated, which is the A3 rule applied consistently.
+- **Order address views** are logged once per staff member and order, on the first render of a detail page in a fulfilment state.
+
+### 17.3 Customers
+
+- **Revocation is enforced at read time.** Every render of a customer page re-reads the grant behind each live reveal; a revoked or expired grant masks the fields immediately. Reveal rows are not rewritten on revocation (the `expires_at > created_at` CHECK would otherwise be violated when both fall in the same instant).
+- **Role changes** take the `user-roles` advisory lock, require the target's email typed back, revoke sessions, staff verifications and grants in the same transaction, clear the second factor on demotion to `CUSTOMER`, and leave the last-admin rule to the database trigger (surfaced as a failed operation with its message).
+
+### 17.4 Uploads and images
+
+- Signatures bind `timestamp`, the per-product `folder`, a server-generated `public_id`, `allowed_formats`, the `c_limit` transformation and, when `CLOUDINARY_UPLOAD_PRESET` is set, the signed preset. The response signature and facts are verified before anything is stored; the stored URL is built from the public id and version, never taken from the browser.
+- Without Cloudinary credentials (development), images can be added by `https` address with their dimensions and description; such rows have no public id and are never swept.
+- The enrolment page shows the setup key and an `otpauth://` link rather than a QR image: no image library was added, and every authenticator app accepts a typed key.
+
+### 17.5 Seeds, scripts and tests
+
+- `SEED_ADMIN_PASSWORD` creates `admin@example.com` (ADMIN) and `staff@example.com` (STAFF) in development and CI, clearing their second factor and sessions on every seed so the e2e journeys always start at enrolment. `scripts/provision-db-roles.sql` must run before `prisma migrate deploy` on a fresh database (CI does).
+- The e2e admin journeys create their own staff accounts over plain SQL (`e2e/staff.ts`): the generated Prisma client is ESM-only and the Playwright runner cannot load it. They cover the gate, enrolment, a new-session verification with a recovery code, axe on every admin page, a cash-on-delivery order shipped, refused, returned and inspected, and a grant issued (after re-authentication), used and revoked.
+- Final counts at the closing commit are in the Phase 7 completion report and in `docs/roadmap.md`.
+
+### 17.6 Still open after Phase 7
+
+- Reports do not yet "time-travel": refunds are attributed to the period they were processed in, cancellations to the period cancelled in.
+- Staff cannot yet see their own grants in one place; grants are listed on the customer they cover and in the audit browser.
+- The customer page reveals one field set at a time; a second reveal within the window extends nothing, it adds a new ten-minute window for its own fields.

@@ -1,4 +1,5 @@
 import styles from "@/components/admin/Admin.module.css";
+import { TableWrap } from "@/components/admin/TableWrap";
 import type { AdminOrderDetail } from "@/features/admin/orders/types";
 import { deliveryFailureLabels } from "@/features/admin/orders/types";
 import type { DeliveryFailureReason } from "@/features/admin/orders/types";
@@ -120,7 +121,7 @@ export function OrderItemsPanel({ order }: { order: AdminOrderDetail }) {
       <h2 id="order-items" className={styles.panelTitle}>
         Items
       </h2>
-      <div className={styles.tableWrap}>
+      <TableWrap label="Items">
         <table className={styles.table}>
           <thead>
             <tr>
@@ -158,7 +159,7 @@ export function OrderItemsPanel({ order }: { order: AdminOrderDetail }) {
             ))}
           </tbody>
         </table>
-      </div>
+      </TableWrap>
       <dl className={styles.dl}>
         <dt>Subtotal</dt>
         <dd>{formatINR(totals.subtotalInPaise)}</dd>

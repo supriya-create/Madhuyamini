@@ -1,7 +1,7 @@
 import "server-only";
 
 import { getAdminPolicy, hoursToMs } from "@/config/admin-policy";
-import { systemActor, writeAudit } from "@/features/admin/audit";
+import { systemActor, writeAudit } from "@/features/admin/audit-log";
 import { db } from "@/server/db";
 import { destroyCloudinaryImage } from "@/server/uploads/cloudinary";
 import type { DestroyOutcome } from "@/server/uploads/cloudinary";

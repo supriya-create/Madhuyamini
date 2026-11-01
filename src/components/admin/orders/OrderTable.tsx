@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import styles from "@/components/admin/Admin.module.css";
+import { TableWrap } from "@/components/admin/TableWrap";
 import type { AdminOrderListItem } from "@/features/admin/orders/types";
 import { formatDateTime } from "@/lib/dates";
 import { formatINR } from "@/lib/money";
@@ -17,7 +18,7 @@ export function OrderTable({
     return <p className={styles.empty}>No orders match these filters.</p>;
   }
   return (
-    <div className={styles.tableWrap}>
+    <TableWrap label="Orders">
       <table className={styles.table}>
         <thead>
           <tr>
@@ -72,6 +73,6 @@ export function OrderTable({
           ))}
         </tbody>
       </table>
-    </div>
+    </TableWrap>
   );
 }

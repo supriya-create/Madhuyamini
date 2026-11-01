@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import styles from "@/components/admin/Admin.module.css";
+import { TableWrap } from "@/components/admin/TableWrap";
 import { AdminPageHeader } from "@/components/admin/AdminShell";
 import { Badge } from "@/components/admin/orders/StatusBadge";
 import { Field } from "@/components/forms/Field";
@@ -97,7 +98,7 @@ export default async function ProductsPage({
       {list.items.length === 0 ? (
         <p className={styles.empty}>No products match.</p>
       ) : (
-        <div className={styles.tableWrap}>
+        <TableWrap label="Products">
           <table className={styles.table}>
             <thead>
               <tr>
@@ -152,7 +153,7 @@ export default async function ProductsPage({
               ))}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
       )}
       {list.pageCount > 1 ? (
         <nav className={styles.pagination} aria-label="Pages">

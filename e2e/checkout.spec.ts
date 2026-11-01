@@ -47,6 +47,18 @@ async function fillAddress(page: Page) {
   await page.getByLabel("PIN code").fill("847211");
 }
 
+/**
+ * Sends the whole outbox: the job claims a bounded batch per call, and the
+ * admin journeys running alongside queue emails of their own, so one call
+ * is not enough to reach this test's email.
+ */
+async function drainOutbox(page: Page) {
+  for (let round = 0; round < 10; round += 1) {
+    const summary = await runJob(page, "send-notifications");
+    if (Number(summary.claimed ?? 0) === 0) return;
+  }
+}
+
 async function runJob(page: Page, job: string) {
   const response = await page.request.get(`/api/cron/${job}`, {
     headers: { authorization: `Bearer ${CRON_SECRET}` },
@@ -109,7 +121,7 @@ test.describe("guest checkout", () => {
     await expect(page.getByText("Your cart is empty")).toBeVisible();
 
     // Emails leave through the outbox job.
-    await runJob(page, "send-notifications");
+    await drainOutbox(page);
     const mail = await waitForEmail(MAIL_DIR, email, /confirmed/i);
     expect(mail.subject).toContain(orderNumber);
 

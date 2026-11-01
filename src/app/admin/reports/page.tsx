@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import styles from "@/components/admin/Admin.module.css";
+import { TableWrap } from "@/components/admin/TableWrap";
 import { AdminPageHeader } from "@/components/admin/AdminShell";
 import { Field } from "@/components/forms/Field";
 import { SelectField } from "@/components/forms/SelectField";
@@ -179,7 +180,7 @@ function SalesView({
       {rows.length === 0 ? (
         <p className={styles.empty}>No paid orders in this period.</p>
       ) : (
-        <div className={styles.tableWrap}>
+        <TableWrap label="Report rows">
           <table className={styles.table}>
             <thead>
               <tr>
@@ -210,7 +211,7 @@ function SalesView({
               ))}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
       )}
     </div>
   );
@@ -224,7 +225,7 @@ function ProductsView({
   if (data.length === 0)
     return <p className={styles.empty}>No units sold in this period.</p>;
   return (
-    <div className={styles.tableWrap}>
+    <TableWrap label="Report rows">
       <table className={styles.table}>
         <thead>
           <tr>
@@ -249,7 +250,7 @@ function ProductsView({
           ))}
         </tbody>
       </table>
-    </div>
+    </TableWrap>
   );
 }
 

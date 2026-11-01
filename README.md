@@ -67,6 +67,8 @@ Variables are validated at startup in `src/server/env-schema.ts`.
 
 > **Note:** a production build (`SITE_ENV=production`) intentionally fails until the hero photograph replaces its `ImagePending` placeholder.
 
+Phase 7 (admin) adds: `ADMIN_TOTP_KEY` (32 random bytes, base64url; encrypts staff authenticator secrets — generate with `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`), `ADMIN_TOTP_KEY_PREVIOUS` (during rotation), `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` / `CLOUDINARY_UPLOAD_PRESET` (signed product image uploads; optional in development, where images can be added by address), `SEED_ADMIN_PASSWORD` (development only: seeds `admin@example.com` and `staff@example.com`), and `MIGRATION_DATABASE_URL` (the owning role for migrations once the runtime role `madhuyamini_app` exists; run `scripts/provision-db-roles.sql` first). The first production admin is created with `npm run admin:promote -- <email>` (docs/admin.md §13).
+
 ## Documentation
 
 - [Roadmap and phase status](docs/roadmap.md)

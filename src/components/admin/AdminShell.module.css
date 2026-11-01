@@ -6,8 +6,7 @@
 }
 
 .header {
-  position: sticky;
-  top: 0;
+  /* Sticky only where it stays short; on phones it would cover the content. */
   z-index: 10;
   display: grid;
   gap: var(--space-3);
@@ -92,10 +91,12 @@
 }
 
 .main {
+  min-width: 0;
   padding: var(--space-6) var(--gutter) var(--space-9);
 }
 
 .main > * {
+  min-width: 0;
   max-width: var(--container-max);
   margin-inline: auto;
 }
@@ -167,6 +168,8 @@
 
 @media (min-width: 64em) {
   .header {
+    position: sticky;
+    top: 0;
     grid-template-columns: auto 1fr;
     align-items: center;
   }

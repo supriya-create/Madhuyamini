@@ -15,11 +15,11 @@ CREATE TYPE "upload_status" AS ENUM ('ISSUED', 'ATTACHED', 'DISCARDED', 'SWEPT')
 -- the enum.
 
 
-ALTER TYPE "cancellation_reason" ADD VALUE 'COD_REFUSED';
-ALTER TYPE "cancellation_reason" ADD VALUE 'DELIVERY_FAILED';
+ALTER TYPE "cancellation_reason" ADD VALUE IF NOT EXISTS 'COD_REFUSED';
+ALTER TYPE "cancellation_reason" ADD VALUE IF NOT EXISTS 'DELIVERY_FAILED';
 
 -- AlterEnum
-ALTER TYPE "order_actor" ADD VALUE 'STAFF';
+ALTER TYPE "order_actor" ADD VALUE IF NOT EXISTS 'STAFF';
 
 -- AlterEnum
 -- This migration adds more than one value to an enum.
@@ -29,11 +29,11 @@ ALTER TYPE "order_actor" ADD VALUE 'STAFF';
 -- the enum.
 
 
-ALTER TYPE "order_status" ADD VALUE 'PROCESSING';
-ALTER TYPE "order_status" ADD VALUE 'SHIPPED';
-ALTER TYPE "order_status" ADD VALUE 'DELIVERED';
-ALTER TYPE "order_status" ADD VALUE 'DELIVERY_FAILED';
-ALTER TYPE "order_status" ADD VALUE 'RETURNED';
+ALTER TYPE "order_status" ADD VALUE IF NOT EXISTS 'PROCESSING';
+ALTER TYPE "order_status" ADD VALUE IF NOT EXISTS 'SHIPPED';
+ALTER TYPE "order_status" ADD VALUE IF NOT EXISTS 'DELIVERED';
+ALTER TYPE "order_status" ADD VALUE IF NOT EXISTS 'DELIVERY_FAILED';
+ALTER TYPE "order_status" ADD VALUE IF NOT EXISTS 'RETURNED';
 
 -- CreateTable
 CREATE TABLE "admin_audit_log" (

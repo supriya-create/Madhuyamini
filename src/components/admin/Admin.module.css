@@ -124,6 +124,14 @@
   align-items: start;
 }
 
+/* Grid items default to min-width: auto, which would let a wide table push
+   the whole page sideways instead of scrolling inside its wrapper. */
+.grid > *,
+.actions > *,
+.panel {
+  min-width: 0;
+}
+
 .panel {
   display: grid;
   gap: var(--space-3);

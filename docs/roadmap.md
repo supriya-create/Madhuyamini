@@ -1,6 +1,6 @@
 # Madhuyamini — Roadmap
 
-Status: **Phases 1–6 implemented (1 Nov 2026); Phase 7 proposed.** Brand inputs (D2) and the Razorpay test-mode smoke are still outstanding; the Phase 7 proposal ([admin.md](admin.md)) awaits approval.
+Status: **Phases 1–7 implemented (1 Nov 2026).** Brand inputs (D2) and the Razorpay test-mode smoke are still outstanding; the admin dashboard ([admin.md](admin.md), §17 for implementation notes) is built and tested, and its production blockers are listed in admin.md §16.
 
 Related: [architecture.md](architecture.md) · [design-system.md](design-system.md). Decision IDs (D1–D9) refer to architecture.md §7.
 
@@ -12,7 +12,7 @@ Related: [architecture.md](architecture.md) · [design-system.md](design-system.
 | 4   | Authentication and customer accounts        | **Implemented** ([auth.md](auth.md))         | decided (D3, D5, P1–P5)     |
 | 5   | Cart and wishlist                           | **Implemented** ([cart.md](cart.md))         | decided (C1–C6)             |
 | 6   | Checkout and payments (Razorpay + COD)      | **Implemented** ([checkout.md](checkout.md)) | decided (D6, D7a–c, P6–P12) |
-| 7   | Admin dashboard                             | **Proposed** ([admin.md](admin.md))          | A1–A9                       |
+| 7   | Admin dashboard                             | **Implemented** ([admin.md](admin.md))       | A1–A13                      |
 | 8   | Advanced e-commerce features                | Not started                                  | D7                          |
 | 9   | Brand experience and content                | Not started                                  | D2                          |
 | 10  | Testing, security and performance hardening | Not started                                  | D8, D9                      |
@@ -169,7 +169,7 @@ A production-ready PostgreSQL schema for customers and the catalog, with databas
 
 - [x] `src/features/catalog/`: `schemas.ts` (Zod), `rules.ts` (pure), `types.ts` (DTOs), `data.ts` (Prisma, server-only), `service.ts`
 - [x] Reads: category tree, category by slug, paginated product listing (category incl. children, sort), product detail with options/variants/availability, featured products
-- [ ] Admin writes (create/update products, stock adjustments) — Phase 7
+- [x] Admin writes (create/update products, stock adjustments) — Phase 7
 - [ ] Price sorting and filters — Phase 3 (needs a denormalised minimum price or SQL ordering)
 
 **2.4 Seed**
@@ -293,7 +293,7 @@ Approved 31 Oct 2026 with Better Auth (D3), PostgreSQL rate limits (D5) and poli
 - [x] Header shows Sign in / Your account
 - [ ] Newsletter with an auditable consent record (P5) — still outstanding from Phase 2
 - [ ] Email change, account deletion/export (DPDP) — Phase 8/10
-- [ ] Admin role assignment with session revocation — Phase 7
+- [x] Admin role assignment with session revocation — Phase 7
 
 ### Results (31 Oct 2026)
 
@@ -384,7 +384,7 @@ Approved 1 Nov 2026 with D6 (15-minute holds, one 15-minute extension), D7a (₹
 - [ ] Razorpay **test-mode smoke** on a deployed preview with the owner's keys (§15 of checkout.md) — not run; needs keys
 - [ ] Vercel Hobby plan runs crons at most daily; per-5-minute schedules need Pro or an external pinger — decide at deployment (Phase 11)
 - [ ] Policy pages for Razorpay live activation — Phase 9, before go-live
-- [ ] Admin tooling for `NEEDS_REVIEW` orders and `FAILED` queue rows — Phase 7
+- [x] Admin tooling for `NEEDS_REVIEW` orders and `FAILED` queue rows — Phase 7
 
 ### Results (1 Nov 2026)
 

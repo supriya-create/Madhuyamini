@@ -508,7 +508,7 @@ export async function markDeliveryFailed(
           event: "cod_refused",
           actor,
           actorUserId: ctx.user.id,
-          reason: input.note ?? input.reason,
+          reason: input.note,
           now,
         });
       }
