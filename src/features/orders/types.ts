@@ -100,6 +100,11 @@ export const orderStatusLabels: Readonly<Record<OrderStatus, string>> = {
   CONFIRMED: "Confirmed",
   CANCELLED: "Cancelled",
   NEEDS_REVIEW: "Being checked",
+  PROCESSING: "Being prepared",
+  SHIPPED: "Shipped",
+  DELIVERED: "Delivered",
+  DELIVERY_FAILED: "Delivery unsuccessful",
+  RETURNED: "Returned to us",
 };
 
 const timelineLabels: Readonly<Record<string, string>> = {

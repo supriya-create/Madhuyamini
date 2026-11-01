@@ -145,7 +145,7 @@ export async function signInAction(
     };
   }
   const { email, password } = parsed.data;
-  const destination = safeReturnPath(parsed.data.next, routes.account);
+  let destination = safeReturnPath(parsed.data.next, routes.account);
   let userId: string;
 
   try {
@@ -185,7 +185,17 @@ export async function signInAction(
       console.error("guest cart merge failed", error);
     }
     // Quantities were reduced: the customer reviews them before anything else.
-    if (adjusted) redirect(`${routes.cart}?cart=adjusted`);
+    if (adjusted) destination = `${routes.cart}?cart=adjusted`;
+  }
+
+  // Staff and admins pass their second factor before anything else
+  // (docs/admin.md §5.9). The role is read from the database, never the form.
+  const signedIn = await db.user.findUnique({
+    where: { id: userId },
+    select: { role: true },
+  });
+  if (signedIn && signedIn.role !== "CUSTOMER") {
+    redirect(`${routes.loginVerify}?next=${encodeURIComponent(destination)}`);
   }
 
   redirect(destination);

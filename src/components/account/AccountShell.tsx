@@ -36,6 +36,14 @@ export function AccountShell({ user, title, children }: AccountShellProps) {
             { label: "Addresses", href: routes.accountAddresses },
             { label: "Wishlist", href: routes.accountWishlist },
             { label: "Password and devices", href: routes.accountSecurity },
+            ...(user.role === "CUSTOMER"
+              ? []
+              : [
+                  {
+                    label: "Two-factor sign-in",
+                    href: routes.accountTwoFactor,
+                  },
+                ]),
           ]}
         />
         <section className={styles.content} aria-label={title}>

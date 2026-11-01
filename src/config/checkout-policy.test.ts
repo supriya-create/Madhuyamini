@@ -88,13 +88,18 @@ describe("checkout policy", () => {
       "src/features/inventory",
       "src/server/jobs",
       "src/server/payments",
+      "src/features/admin",
+      "src/server/security",
+      "src/server/uploads",
+      "src/server/auth/staff.ts",
     ];
     const offenders: string[] = [];
     for (const root of roots) {
       for (const file of listTypeScript(root)) {
         const source = readFileSync(file, "utf8");
-        source.split("\n").forEach((line, index) => {
-          if (line.includes("policy-literal-ok")) return;
+        source.split("\n").forEach((rawLine, index) => {
+          if (rawLine.includes("policy-literal-ok")) return;
+          const line = stripComments(rawLine);
           if (/\b\d{1,3}(_\d{3})+\b|\b\d{4,}\b/.test(stripStrings(line))) {
             offenders.push(`${file}:${index + 1}: ${line.trim()}`);
           }
@@ -111,6 +116,7 @@ describe("checkout policy", () => {
 function listTypeScript(root: string): string[] {
   let entries: string[];
   try {
+    if (statSync(root).isFile()) return [root];
     entries = readdirSync(root);
   } catch {
     return [];
@@ -120,6 +126,18 @@ function listTypeScript(root: string): string[] {
     if (statSync(path).isDirectory()) return listTypeScript(path);
     return /\.tsx?$/.test(entry) && !/\.test\.tsx?$/.test(entry) ? [path] : [];
   });
+}
+
+/** Comments may cite RFC numbers and the like; only code is scanned. */
+function stripComments(line: string): string {
+  const trimmed = line.trimStart();
+  if (
+    trimmed.startsWith("*") ||
+    trimmed.startsWith("/*") ||
+    trimmed.startsWith("//")
+  )
+    return "";
+  return line.replace(/\/\/.*$/, "");
 }
 
 /** Drops string contents so ids, messages and SQL text are not mistaken for amounts. */

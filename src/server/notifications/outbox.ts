@@ -15,7 +15,8 @@ export type NotificationKind =
   | "order.cancelled"
   | "order.refund_requested"
   | "owner.new_order"
-  | "ops.alert";
+  | "ops.alert"
+  | "security.recovery_code_used";
 
 export interface EnqueueNotification {
   readonly kind: NotificationKind;

@@ -20,7 +20,15 @@ export type OrderEventKind =
   | "customer_cancelled"
   | "stock_lost"
   | "admin_confirmed"
-  | "admin_cancelled";
+  | "admin_cancelled"
+  // Fulfilment (Phase 7, docs/admin.md §5.4) and return to origin (§5.11).
+  | "start_processing"
+  | "ship"
+  | "deliver"
+  | "delivery_failed"
+  | "parcel_returned"
+  | "inspection_completed"
+  | "carrier_lost_confirmed";
 
 const ORDER_TRANSITIONS: Readonly<
   Record<OrderStatus, Readonly<Partial<Record<OrderEventKind, OrderStatus>>>>
@@ -42,8 +50,17 @@ const ORDER_TRANSITIONS: Readonly<
     admin_confirmed: "CONFIRMED",
     admin_cancelled: "CANCELLED",
   },
-  // Fulfilment states arrive in Phase 7/8.
-  CONFIRMED: {},
+  CONFIRMED: { start_processing: "PROCESSING", admin_cancelled: "CANCELLED" },
+  PROCESSING: { ship: "SHIPPED", admin_cancelled: "CANCELLED" },
+  SHIPPED: { deliver: "DELIVERED", delivery_failed: "DELIVERY_FAILED" },
+  // Final in Phase 7; customer returns arrive in Phase 8.
+  DELIVERED: {},
+  // A parcel on its way back never restores stock by itself (§5.11).
+  DELIVERY_FAILED: {
+    parcel_returned: "RETURNED",
+    carrier_lost_confirmed: "CANCELLED",
+  },
+  RETURNED: { inspection_completed: "CANCELLED" },
 };
 
 /** The status an order moves to, or null when the move is not allowed. */
@@ -99,6 +116,42 @@ export const OPEN_PAYMENT_STATUSES: readonly PaymentStatus[] = [
 export function isOpenPaymentStatus(status: PaymentStatus): boolean {
   return OPEN_PAYMENT_STATUSES.includes(status);
 }
+
+/**
+ * Cash-on-delivery money moves (docs/admin.md §5.10): explicit, separate
+ * from the online table and from fulfilment. Applied only to COD attempts
+ * by `features/payments/cod.ts`.
+ */
+export type CodPaymentEventKind =
+  "cod_collected" | "cod_refused" | "cod_collection_reversed";
+
+const COD_PAYMENT_TRANSITIONS: Readonly<
+  Partial<
+    Record<
+      PaymentStatus,
+      Readonly<Partial<Record<CodPaymentEventKind, PaymentStatus>>>
+    >
+  >
+> = {
+  CREATED: { cod_collected: "CAPTURED", cod_refused: "FAILED" },
+  CAPTURED: { cod_collection_reversed: "CREATED" },
+};
+
+export function nextCodPaymentStatus(
+  current: PaymentStatus,
+  event: CodPaymentEventKind,
+): PaymentStatus | null {
+  return COD_PAYMENT_TRANSITIONS[current]?.[event] ?? null;
+}
+
+/** Fulfilment states in which the delivery address is operationally needed. */
+export const FULFILMENT_IN_PROGRESS: readonly OrderStatus[] = [
+  "CONFIRMED",
+  "PROCESSING",
+  "SHIPPED",
+  "DELIVERY_FAILED",
+  "RETURNED",
+];
 
 export type ReservationEventKind = "consumed" | "released" | "expired";
 

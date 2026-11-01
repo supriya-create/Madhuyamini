@@ -11,14 +11,20 @@ type AccountNavProps = {
 
 export function AccountNav({ items }: AccountNavProps) {
   const pathname = usePathname();
+  // The longest matching prefix is current, so a nested page (for example
+  // /account/security/two-factor) highlights one item only.
+  const currentHref = items
+    .filter(
+      (item) =>
+        pathname === item.href ||
+        (item.href !== "/account" && pathname.startsWith(`${item.href}/`)),
+    )
+    .sort((a, b) => b.href.length - a.href.length)[0]?.href;
   return (
     <nav aria-label="Account" className={styles.nav}>
       <ul className={styles.navList}>
         {items.map((item) => {
-          const current =
-            item.href === "/account"
-              ? pathname === item.href
-              : pathname.startsWith(item.href);
+          const current = item.href === currentHref;
           return (
             <li key={item.href}>
               <Link

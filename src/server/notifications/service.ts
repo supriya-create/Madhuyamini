@@ -10,6 +10,7 @@ import {
   orderCancelledMessage,
   orderConfirmedMessage,
   ownerNewOrderMessage,
+  recoveryCodeUsedMessage,
   refundRequestedMessage,
 } from "@/server/email/templates";
 import type { OrderEmailSummary } from "@/server/email/templates";
@@ -142,6 +143,16 @@ export async function renderNotification(
           field(row.payload, "title") ??
           "Attention needed",
         details,
+      });
+    }
+    case "security.recovery_code_used": {
+      const remaining = numberField(row.payload, "remaining");
+      if (remaining === null)
+        throw new NotificationRenderError("recovery payload incomplete");
+      return recoveryCodeUsedMessage({
+        to: row.recipient,
+        remaining,
+        securityUrl: absolute(routes.accountTwoFactor),
       });
     }
     default:

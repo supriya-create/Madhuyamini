@@ -14,7 +14,10 @@ export async function resetDatabase(): Promise<void> {
       categories, addresses, sessions, accounts, verifications, rate_limits,
       cart_items, carts, wishlist_items,
       notification_outbox, order_events, payment_webhook_events, order_access_tokens,
-      refunds, payments, order_items, orders, users
+      refunds, payments, order_items, orders,
+      admin_audit_log, inventory_adjustments, shipments, product_image_uploads,
+      staff_pii_reveals, staff_pii_grants, staff_session_verifications,
+      staff_recovery_codes, staff_two_factor, users
     RESTART IDENTITY CASCADE
   `;
 }

@@ -228,3 +228,24 @@ export function opsAlertMessage(params: {
     ...layout([params.title, ...params.details]),
   };
 }
+
+export function recoveryCodeUsedMessage(params: {
+  to: string;
+  remaining: number;
+  securityUrl: string;
+}): EmailMessage {
+  return {
+    to: params.to,
+    subject: `A recovery code was used to sign in to ${BRAND}`,
+    ...layout(
+      [
+        "One of your recovery codes was just used to pass two-factor sign-in on your staff account.",
+        params.remaining === 0
+          ? "You have no recovery codes left. Ask an admin to reset your second factor so you can set it up again with new codes."
+          : `You have ${params.remaining} recovery ${params.remaining === 1 ? "code" : "codes"} left.`,
+        "If this was not you, ask an admin to reset your second factor and change your password straight away.",
+      ],
+      { label: "Review your sign-in security", url: params.securityUrl },
+    ),
+  };
+}

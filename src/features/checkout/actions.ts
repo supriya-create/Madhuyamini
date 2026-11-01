@@ -1,6 +1,8 @@
 "use server";
 
 import { redirect } from "next/navigation";
+
+import type { OrderStatus } from "@/generated/prisma/enums";
 import { z } from "zod";
 
 import { getCheckoutPolicy } from "@/config/checkout-policy";
@@ -364,8 +366,7 @@ export async function cancelPendingOrderAction(
 }
 
 export interface OrderStatusSnapshot {
-  readonly status:
-    "PENDING_PAYMENT" | "CONFIRMED" | "CANCELLED" | "NEEDS_REVIEW";
+  readonly status: OrderStatus;
   readonly latestPaymentStatus: string | null;
 }
 

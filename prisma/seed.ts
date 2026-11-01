@@ -4,6 +4,7 @@ import { createPrismaClient } from "../src/server/prisma-client";
 
 import { seedCatalog } from "./seed/catalog";
 import { assertSeedAllowed } from "./seed/guard";
+import { seedStaff } from "./seed/staff";
 
 /**
  * Development seed. Run with `npx prisma db seed` (never automatically).
@@ -28,8 +29,9 @@ async function main(): Promise<void> {
   const prisma = createPrismaClient(databaseUrl);
   try {
     const summary = await seedCatalog(prisma);
+    const staff = await seedStaff(prisma, process.env.SEED_ADMIN_PASSWORD);
     console.warn(
-      `Seeded ${summary.categories} categories, ${summary.products} products, ${summary.variants} variants.`,
+      `Seeded ${summary.categories} categories, ${summary.products} products, ${summary.variants} variants, ${staff} staff accounts.`,
     );
   } finally {
     await prisma.$disconnect();

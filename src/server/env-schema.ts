@@ -53,6 +53,18 @@ export interface ServerEnv {
     /** Inbox that receives new-order and operations alerts (P10); null disables them. */
     readonly ownerEmail: string | null;
   };
+  readonly admin: {
+    /** Encrypts staff TOTP secrets; null means no staff can sign in to the admin. Never log it. */
+    readonly totpKey: Buffer | null;
+    /** Accepted for decryption during rotation. */
+    readonly totpKeyPrevious: Buffer | null;
+  };
+  /** Null until all three variables are set; uploads are unavailable, nothing fails at build. */
+  readonly cloudinary: {
+    readonly cloudName: string;
+    readonly apiKey: string;
+    readonly apiSecret: string;
+  } | null;
 }
 
 const DEFAULT_SITE_URL = "http://localhost:3000";
@@ -66,6 +78,15 @@ function isPostgresUrl(value: string): boolean {
     return false;
   }
 }
+
+/** 32 random bytes, base64url (43 characters); the value is never echoed. */
+const totpKeySchema = z.string().refine((value) => {
+  try {
+    return Buffer.from(value, "base64url").length === 32;
+  } catch {
+    return false;
+  }
+}, "must be 32 random bytes encoded as base64url");
 
 /** Treat empty strings as unset, which is how most hosts represent a cleared variable. */
 const optionalString = z.preprocess(
@@ -117,6 +138,11 @@ const rawEnvSchema = z
     ORDER_NOTIFY_EMAIL: optionalString.pipe(
       z.email("ORDER_NOTIFY_EMAIL must be an email address").optional(),
     ),
+    ADMIN_TOTP_KEY: optionalString.pipe(totpKeySchema.optional()),
+    ADMIN_TOTP_KEY_PREVIOUS: optionalString.pipe(totpKeySchema.optional()),
+    CLOUDINARY_CLOUD_NAME: optionalString,
+    CLOUDINARY_API_KEY: optionalString,
+    CLOUDINARY_API_SECRET: optionalString,
   })
   .superRefine((value, ctx) => {
     if (value.SITE_ENV !== "production") return;
@@ -185,6 +211,11 @@ export function parseEnv(source: EnvSource): ServerEnv {
     RAZORPAY_WEBHOOK_SECRET_PREVIOUS: source.RAZORPAY_WEBHOOK_SECRET_PREVIOUS,
     CRON_SECRET: source.CRON_SECRET,
     ORDER_NOTIFY_EMAIL: source.ORDER_NOTIFY_EMAIL,
+    ADMIN_TOTP_KEY: source.ADMIN_TOTP_KEY,
+    ADMIN_TOTP_KEY_PREVIOUS: source.ADMIN_TOTP_KEY_PREVIOUS,
+    CLOUDINARY_CLOUD_NAME: source.CLOUDINARY_CLOUD_NAME,
+    CLOUDINARY_API_KEY: source.CLOUDINARY_API_KEY,
+    CLOUDINARY_API_SECRET: source.CLOUDINARY_API_SECRET,
   });
 
   if (!result.success) {
@@ -227,5 +258,23 @@ export function parseEnv(source: EnvSource): ServerEnv {
     payments: { gateway, razorpay },
     cronSecret: result.data.CRON_SECRET ?? null,
     notifications: { ownerEmail: result.data.ORDER_NOTIFY_EMAIL ?? null },
+    admin: {
+      totpKey: result.data.ADMIN_TOTP_KEY
+        ? Buffer.from(result.data.ADMIN_TOTP_KEY, "base64url")
+        : null,
+      totpKeyPrevious: result.data.ADMIN_TOTP_KEY_PREVIOUS
+        ? Buffer.from(result.data.ADMIN_TOTP_KEY_PREVIOUS, "base64url")
+        : null,
+    },
+    cloudinary:
+      result.data.CLOUDINARY_CLOUD_NAME &&
+      result.data.CLOUDINARY_API_KEY &&
+      result.data.CLOUDINARY_API_SECRET
+        ? {
+            cloudName: result.data.CLOUDINARY_CLOUD_NAME,
+            apiKey: result.data.CLOUDINARY_API_KEY,
+            apiSecret: result.data.CLOUDINARY_API_SECRET,
+          }
+        : null,
   };
 }

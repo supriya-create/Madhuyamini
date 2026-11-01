@@ -39,6 +39,9 @@ jobs:
       # Not a real secret: CI databases are throwaway. Production uses its own value.
       BETTER_AUTH_SECRET: ci-only-secret-value-that-is-at-least-32-chars
       EMAIL_TRANSPORT: file
+      # Throwaway Phase 7 values: the seeded staff accounts and TOTP key exist only in CI.
+      SEED_ADMIN_PASSWORD: ci-only-staff-password
+      ADMIN_TOTP_KEY: AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA
     steps:
       # Actions are pinned to commit SHAs (tag in the comment) to protect the pipeline from tag moves.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -57,6 +60,9 @@ jobs:
 
       - name: Create the integration-test database
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE madhuyamini_test"
+
+      - name: Provision the runtime database role (docs/admin.md §12, A13)
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/provision-db-roles.sql
 
       - name: Apply migrations and seed the development database (used by the e2e server)
         run: npm run db:deploy && npm run db:seed

@@ -55,6 +55,9 @@ export default defineConfig({
       // Phase 6: the in-process fake gateway and the job routes (e2e/checkout.spec.ts).
       PAYMENT_GATEWAY: "fake",
       CRON_SECRET: "e2e-cron-secret-value",
+      // Phase 7: seeded staff accounts and a throwaway TOTP key (e2e/admin.spec.ts).
+      SEED_ADMIN_PASSWORD: "e2e-staff-password-value",
+      ADMIN_TOTP_KEY: "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
     },
   },
 });

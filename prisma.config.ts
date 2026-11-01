@@ -22,6 +22,11 @@ export default defineConfig({
   datasource: {
     // Read directly (not via `env()`) so `prisma generate` works without a
     // database, e.g. on a fresh install. Migrate commands still need a real URL.
-    url: process.env.DATABASE_URL ?? "postgresql://localhost:5432/madhuyamini",
+    // Migrations run as the table owner; the application may use a restricted
+    // runtime role in DATABASE_URL (docs/admin.md §13).
+    url:
+      process.env.MIGRATION_DATABASE_URL ??
+      process.env.DATABASE_URL ??
+      "postgresql://localhost:5432/madhuyamini",
   },
 });

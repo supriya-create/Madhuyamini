@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { Prisma } from "@/generated/prisma/client";
-import type { OrderActor } from "@/generated/prisma/enums";
+import type { OrderActor, OrderStatus } from "@/generated/prisma/enums";
 import {
   consumeOrderHolds,
   tryCommitForOrder,
@@ -146,7 +146,7 @@ export async function applyCapture(
 type OrderUnderLock = {
   id: string;
   orderNumber: string;
-  status: "PENDING_PAYMENT" | "CONFIRMED" | "CANCELLED" | "NEEDS_REVIEW";
+  status: OrderStatus;
   email: string;
   cartId: string | null;
   totalInPaise: number;

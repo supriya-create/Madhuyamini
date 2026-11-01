@@ -16,3 +16,5 @@ process.env.PASSWORD_BREACH_CHECK = "off";
 // Owner notifications and operations alerts go to this inbox in tests.
 process.env.ORDER_NOTIFY_EMAIL = "owner@example.com";
 process.env.CRON_SECRET = "integration-cron-secret-value";
+// Throwaway TOTP key for the staff second-factor tests (32 zero-free bytes, base64url).
+process.env.ADMIN_TOTP_KEY ??= "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA";

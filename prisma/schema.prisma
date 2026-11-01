@@ -104,13 +104,21 @@ model User {
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  addresses     Address[]
-  reviews       Review[]
-  sessions      Session[]
-  accounts      Account[]
-  carts         Cart[]
-  wishlistItems WishlistItem[]
-  orders        Order[]
+  addresses          Address[]
+  reviews            Review[]
+  sessions           Session[]
+  accounts           Account[]
+  carts              Cart[]
+  wishlistItems      WishlistItem[]
+  orders             Order[]
+  auditEntries       AdminAuditLog[]
+  staffTwoFactor     StaffTwoFactor?
+  staffRecoveryCodes StaffRecoveryCode[]
+  staffVerifications StaffSessionVerification[]
+  piiGrantsReceived  StaffPiiGrant[]            @relation("PiiGrantee")
+  piiGrantsGiven     StaffPiiGrant[]            @relation("PiiGrantor")
+  piiRevealsMade     StaffPiiReveal[]           @relation("PiiRevealStaff")
+  piiRevealsAbout    StaffPiiReveal[]           @relation("PiiRevealCustomer")
 
   @@map("users")
 }
@@ -127,7 +135,8 @@ model Session {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  staffVerification StaffSessionVerification?
 
   @@index([userId])
   @@index([expiresAt])
@@ -343,6 +352,7 @@ model ProductVariant {
   images       ProductImage[]
   cartItems    CartItem[]
   orderItems   OrderItem[]
+  adjustments  InventoryAdjustment[]
 
   @@index([productId, position])
   @@map("product_variants")
@@ -500,6 +510,13 @@ enum OrderStatus {
   CONFIRMED
   CANCELLED
   NEEDS_REVIEW
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  /// Parcel refused, unclaimed, undeliverable or lost: return to origin (docs/admin.md §5.11).
+  DELIVERY_FAILED
+  /// Parcel physically back; awaiting inspection before any stock returns.
+  RETURNED
 
   @@map("order_status")
 }
@@ -510,6 +527,8 @@ enum CancellationReason {
   CUSTOMER
   STOCK_UNAVAILABLE
   ADMIN
+  COD_REFUSED
+  DELIVERY_FAILED
 
   @@map("cancellation_reason")
 }
@@ -549,6 +568,7 @@ enum OrderActor {
   WEBHOOK
   CRON
   ADMIN
+  STAFF
 
   @@map("order_actor")
 }
@@ -620,6 +640,7 @@ model Order {
   reservations  InventoryReservation[]
   events        OrderEvent[]
   notifications NotificationOutbox[]
+  shipment      Shipment?
 
   /// Placement idempotency: one live order per cart (docs/checkout.md §5.7).
   @@unique([cartId], map: "orders_one_live_per_cart", where: raw("status <> 'CANCELLED'::order_status"))
@@ -799,4 +820,242 @@ model NotificationOutbox {
 
   @@index([status, nextAttemptAt])
   @@map("notification_outbox")
+}
+
+// ---------------------------------------------------------------------------
+// Admin and store operations (Phase 7). Design: docs/admin.md.
+// ---------------------------------------------------------------------------
+
+enum AuditOutcome {
+  SUCCESS
+  REFUSED
+  FAILED
+
+  @@map("audit_outcome")
+}
+
+enum InventoryAdjustmentKind {
+  RECEIVED
+  CORRECTION
+  WRITE_OFF
+  /// System restock when an unshipped order is cancelled.
+  RESTOCK_ON_CANCEL
+  /// Inspection of a physically returned parcel (always with an actor).
+  RESTOCK_ON_RETURN
+
+  @@map("inventory_adjustment_kind")
+}
+
+enum UploadStatus {
+  ISSUED
+  ATTACHED
+  DISCARDED
+  SWEPT
+
+  @@map("upload_status")
+}
+
+/// Append-only: an immutability trigger and no UPDATE/DELETE privilege for
+/// the runtime role. SUCCESS rows share the mutation's transaction; REFUSED
+/// and FAILED rows are written after the business transaction rolled back.
+model AdminAuditLog {
+  id         String       @id @default(uuid(7)) @db.Uuid
+  /// Null only for scripts and system sweeps (see actorLabel; CHECK).
+  actorId    String?      @map("actor_id") @db.Uuid
+  /// "user:<id>", "script:promote-admin@<host>", "system:upload-sweep".
+  actorLabel String       @map("actor_label")
+  actorRole  UserRole?    @map("actor_role")
+  sessionId  String?      @map("session_id") @db.Uuid
+  action     String
+  targetType String       @map("target_type")
+  targetId   String?      @map("target_id")
+  outcome    AuditOutcome
+  reason     String?
+  /// FAILED: the AppError code, never a message or stack.
+  errorCode  String?      @map("error_code")
+  /// The staff_pii_grants row a reveal relied on.
+  grantId    String?      @map("grant_id") @db.Uuid
+  /// Redacted snapshots (allow-list per target type).
+  before     Json?
+  after      Json?
+  /// SHA-256 of the client address, as the rate limiter stores it.
+  requestIp  String?      @map("request_ip")
+  createdAt  DateTime     @default(now()) @map("created_at")
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([targetType, targetId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+  @@index([createdAt])
+  @@map("admin_audit_log")
+}
+
+/// Every admin-originated stock change with who, why and the quantities
+/// before and after. Sales remain derivable from order_items.
+model InventoryAdjustment {
+  id             String                  @id @default(uuid(7)) @db.Uuid
+  variantId      String                  @map("variant_id") @db.Uuid
+  kind           InventoryAdjustmentKind
+  /// Signed; CHECK <> 0.
+  delta          Int
+  stockBefore    Int                     @map("stock_before")
+  /// CHECK = stock_before + delta AND >= reserved_at_time.
+  stockAfter     Int                     @map("stock_after")
+  reservedAtTime Int                     @map("reserved_at_time")
+  /// CHECK length >= 3.
+  reason         String
+  /// Required unless kind = RESTOCK_ON_CANCEL (CHECK).
+  actorId        String?                 @map("actor_id") @db.Uuid
+  /// Required for RESTOCK_ON_CANCEL and RESTOCK_ON_RETURN (CHECK).
+  orderId        String?                 @map("order_id") @db.Uuid
+  auditId        String?                 @map("audit_id") @db.Uuid
+  createdAt      DateTime                @default(now()) @map("created_at")
+
+  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+
+  @@index([variantId, createdAt])
+  @@index([orderId])
+  @@map("inventory_adjustments")
+}
+
+/// One shipment per order in Phase 7, including the return-to-origin facts.
+model Shipment {
+  id                    String    @id @default(uuid(7)) @db.Uuid
+  orderId               String    @unique @map("order_id") @db.Uuid
+  carrier               String
+  trackingNumber        String?   @map("tracking_number")
+  /// CHECK: https:// only.
+  trackingUrl           String?   @map("tracking_url")
+  shippedAt             DateTime  @map("shipped_at")
+  /// CHECK >= shipped_at.
+  deliveredAt           DateTime? @map("delivered_at")
+  deliveryFailedAt      DateTime? @map("delivery_failed_at")
+  /// COD_REFUSED | ADDRESS_NOT_FOUND | UNCLAIMED | CARRIER_LOST | OTHER
+  deliveryFailureReason String?   @map("delivery_failure_reason")
+  /// CHECK >= delivery_failed_at.
+  returnedAt            DateTime? @map("returned_at")
+  /// CHECK >= returned_at.
+  inspectedAt           DateTime? @map("inspected_at")
+  inspectionNote        String?   @map("inspection_note")
+  carrierClaimReference String?   @map("carrier_claim_reference")
+  createdById           String    @map("created_by_id") @db.Uuid
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("shipments")
+}
+
+/// Staff second factor (own RFC 6238 implementation, docs/admin.md §5.9).
+model StaffTwoFactor {
+  userId           String    @id @map("user_id") @db.Uuid
+  /// AES-256-GCM ciphertext of the TOTP secret under ADMIN_TOTP_KEY.
+  secretCiphertext String    @map("secret_ciphertext")
+  keyVersion       Int       @map("key_version")
+  /// Null until the first code verifies: an unverified enrolment never counts.
+  enabledAt        DateTime? @map("enabled_at")
+  /// Replay protection: advanced only by an atomic conditional update.
+  lastAcceptedStep BigInt?   @map("last_accepted_step")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("staff_two_factor")
+}
+
+/// One-time recovery codes, stored hashed, consumed by a conditional update.
+model StaffRecoveryCode {
+  id        String    @id @default(uuid(7)) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  codeHash  String    @unique @map("code_hash")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("staff_recovery_codes")
+}
+
+/// Proof that THIS session passed the second factor. No row, no admin access.
+model StaffSessionVerification {
+  sessionId  String   @id @map("session_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  /// TOTP | RECOVERY
+  method     String
+  /// Refreshed by re-authentication.
+  verifiedAt DateTime @map("verified_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("staff_session_verifications")
+}
+
+/// Scoped, time-limited permission for one staff member to reveal contact
+/// details; re-read on every render, so revocation is immediate.
+model StaffPiiGrant {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  granteeId   String    @map("grantee_id") @db.Uuid
+  grantedById String    @map("granted_by_id") @db.Uuid
+  /// Null = any customer during a support shift.
+  customerId  String?   @map("customer_id") @db.Uuid
+  /// Subset of email, phone, address (CHECK).
+  fields      String[]
+  reason      String
+  /// CHECK <= created_at + 24 hours.
+  expiresAt   DateTime  @map("expires_at")
+  revokedAt   DateTime? @map("revoked_at")
+  revokedById String?   @map("revoked_by_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  grantee   User @relation("PiiGrantee", fields: [granteeId], references: [id], onDelete: Cascade)
+  grantedBy User @relation("PiiGrantor", fields: [grantedById], references: [id], onDelete: Restrict)
+
+  @@index([granteeId, expiresAt])
+  @@map("staff_pii_grants")
+}
+
+/// One reveal: which grant, which customer, which fields, until when.
+model StaffPiiReveal {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  /// Null when the actor is ADMIN (inherent permission).
+  grantId    String?  @map("grant_id") @db.Uuid
+  staffId    String   @map("staff_id") @db.Uuid
+  customerId String   @map("customer_id") @db.Uuid
+  fields     String[]
+  reason     String
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  staff    User @relation("PiiRevealStaff", fields: [staffId], references: [id], onDelete: Cascade)
+  customer User @relation("PiiRevealCustomer", fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([staffId, expiresAt])
+  @@index([customerId, createdAt])
+  @@map("staff_pii_reveals")
+}
+
+/// Every upload signature the server issued, so the orphan sweep deletes
+/// only assets we created, inside our folder, after the grace period.
+model ProductImageUpload {
+  id         String       @id @default(uuid(7)) @db.Uuid
+  productId  String       @map("product_id") @db.Uuid
+  /// CHECK LIKE 'madhuyamini/products/%'.
+  publicId   String       @unique @map("public_id")
+  /// CHECK = 'madhuyamini/products/' || product_id.
+  folder     String
+  issuedById String       @map("issued_by_id") @db.Uuid
+  status     UploadStatus @default(ISSUED)
+  issuedAt   DateTime     @default(now()) @map("issued_at")
+  resolvedAt DateTime?    @map("resolved_at")
+  sweepError String?      @map("sweep_error")
+
+  @@index([status, issuedAt])
+  @@map("product_image_uploads")
 }

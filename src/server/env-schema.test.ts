@@ -275,3 +275,46 @@ describe("payments, cron and notification settings", () => {
     );
   });
 });
+
+describe("admin and upload settings", () => {
+  const key = Buffer.alloc(32, 7).toString("base64url");
+
+  it("decodes the TOTP keys and leaves them null when unset", () => {
+    expect(parseEnv(withDb({})).admin).toEqual({
+      totpKey: null,
+      totpKeyPrevious: null,
+    });
+    const env = parseEnv(
+      withDb({ ADMIN_TOTP_KEY: key, ADMIN_TOTP_KEY_PREVIOUS: key }),
+    );
+    expect(env.admin.totpKey?.length).toBe(32);
+    expect(env.admin.totpKeyPrevious?.length).toBe(32);
+  });
+
+  it("rejects a short or malformed TOTP key without echoing it", () => {
+    for (const bad of ["tooshort", Buffer.alloc(16, 1).toString("base64url")]) {
+      try {
+        parseEnv(withDb({ ADMIN_TOTP_KEY: bad }));
+        expect.unreachable("should have thrown");
+      } catch (error) {
+        expect(String(error)).toMatch(/ADMIN_TOTP_KEY/);
+        expect(String(error)).not.toContain(bad);
+      }
+    }
+  });
+
+  it("assembles Cloudinary only when all three variables are set", () => {
+    expect(
+      parseEnv(withDb({ CLOUDINARY_CLOUD_NAME: "demo" })).cloudinary,
+    ).toBeNull();
+    expect(
+      parseEnv(
+        withDb({
+          CLOUDINARY_CLOUD_NAME: "demo",
+          CLOUDINARY_API_KEY: "123",
+          CLOUDINARY_API_SECRET: "shh",
+        }),
+      ).cloudinary,
+    ).toEqual({ cloudName: "demo", apiKey: "123", apiSecret: "shh" });
+  });
+});

@@ -1,0 +1,105 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+
+import { AccountShell } from "@/components/account/AccountShell";
+import shellStyles from "@/components/account/AccountShell.module.css";
+import { TwoFactorEnrolForm } from "@/components/admin/TwoFactorEnrolForm";
+import styles from "@/components/admin/TwoFactor.module.css";
+import { Button } from "@/components/ui/Button";
+import { beginEnrolmentAction } from "@/features/admin/security/actions";
+import {
+  pendingEnrolment,
+  securityStatus,
+} from "@/features/admin/security/service";
+import { safeReturnPath } from "@/features/auth/schemas";
+import { requireUser } from "@/server/auth/current-user";
+import { formatDateTime } from "@/lib/dates";
+import { routes } from "@/lib/routes";
+
+export const metadata: Metadata = {
+  title: "Two-factor sign-in",
+  robots: { index: false, follow: false },
+};
+
+/**
+ * Enrolment and status for the staff second factor (docs/admin.md §5.9).
+ * There is no "turn off": a staff account without it cannot open the admin.
+ */
+export default async function TwoFactorPage({
+  searchParams,
+}: PageProps<"/account/security/two-factor">) {
+  const user = await requireUser();
+  if (user.role === "CUSTOMER") notFound();
+  const query = await searchParams;
+  const next = safeReturnPath(query.next, routes.admin);
+  const status = await securityStatus(user);
+  const pending = status.pending ? await pendingEnrolment(user) : null;
+  const error = typeof query.error === "string" ? query.error : null;
+
+  return (
+    <AccountShell user={user} title="Two-factor sign-in">
+      {error ? (
+        <p role="alert" className={shellStyles.notice}>
+          {error}
+        </p>
+      ) : null}
+      {status.enabled ? (
+        <div className={shellStyles.panel}>
+          <h2 className={shellStyles.panelTitle}>Two-factor sign-in is on</h2>
+          <div className={styles.meta}>
+            <p>
+              Since{" "}
+              {status.enabledAt ? formatDateTime(status.enabledAt) : "now"}.
+            </p>
+            <p>
+              Recovery codes left: {status.recoveryCodesRemaining}.{" "}
+              {status.recoveryCodesRemaining <= 2
+                ? "Ask an admin to reset your second factor to get a fresh set."
+                : null}
+            </p>
+            <p>
+              {status.sessionVerifiedAt
+                ? `This session was confirmed at ${formatDateTime(status.sessionVerifiedAt)}.`
+                : "This session has not been confirmed yet."}
+            </p>
+          </div>
+          {status.sessionVerifiedAt ? null : (
+            <p>
+              <Link
+                href={`${routes.loginVerify}?next=${encodeURIComponent(next)}`}
+              >
+                Confirm this session
+              </Link>
+            </p>
+          )}
+          <p className={styles.hint}>
+            Lost your authenticator app? Use a recovery code to sign in, or ask
+            an admin to reset your second factor so you can set it up again.
+          </p>
+        </div>
+      ) : pending ? (
+        <div className={shellStyles.panel}>
+          <TwoFactorEnrolForm
+            next={next}
+            secretBase32={pending.secretBase32}
+            uri={pending.uri}
+          />
+        </div>
+      ) : (
+        <div className={shellStyles.panel}>
+          <h2 className={shellStyles.panelTitle}>Set up two-factor sign-in</h2>
+          <p className={styles.hint}>
+            Staff accounts confirm every session with a code from an
+            authenticator app. You will get ten one-time recovery codes for when
+            the app is not to hand. Setting up takes about a minute.
+          </p>
+          <form action={beginEnrolmentAction}>
+            <input type="hidden" name="next" value={next} />
+            <Button type="submit">Start setup</Button>
+          </form>
+        </div>
+      )}
+    </AccountShell>
+  );
+}

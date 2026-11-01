@@ -22,6 +22,7 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "job": "tsx --conditions=react-server scripts/run-job.ts",
+    "admin:promote": "tsx --conditions=react-server scripts/promote-admin.ts",
     "db:studio": "prisma studio",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm run test && npm run test:integration && npm run test:e2e"
   },
