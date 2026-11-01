@@ -1,6 +1,6 @@
 # Madhuyamini — Roadmap
 
-Status: **Phases 1–6 implemented (1 Nov 2026).** Brand inputs (D2) are still outstanding; Phase 6 awaits owner review and a Razorpay test-mode smoke run with the owner's keys.
+Status: **Phases 1–6 implemented (1 Nov 2026); Phase 7 proposed.** Brand inputs (D2) and the Razorpay test-mode smoke are still outstanding; the Phase 7 proposal ([admin.md](admin.md)) awaits approval.
 
 Related: [architecture.md](architecture.md) · [design-system.md](design-system.md). Decision IDs (D1–D9) refer to architecture.md §7.
 
@@ -12,7 +12,7 @@ Related: [architecture.md](architecture.md) · [design-system.md](design-system.
 | 4   | Authentication and customer accounts        | **Implemented** ([auth.md](auth.md))         | decided (D3, D5, P1–P5)     |
 | 5   | Cart and wishlist                           | **Implemented** ([cart.md](cart.md))         | decided (C1–C6)             |
 | 6   | Checkout and payments (Razorpay + COD)      | **Implemented** ([checkout.md](checkout.md)) | decided (D6, D7a–c, P6–P12) |
-| 7   | Admin dashboard                             | Not started                                  | none                        |
+| 7   | Admin dashboard                             | **Proposed** ([admin.md](admin.md))          | A1–A9                       |
 | 8   | Advanced e-commerce features                | Not started                                  | D7                          |
 | 9   | Brand experience and content                | Not started                                  | D2                          |
 | 10  | Testing, security and performance hardening | Not started                                  | D8, D9                      |
