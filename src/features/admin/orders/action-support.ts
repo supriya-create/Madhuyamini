@@ -105,6 +105,9 @@ export async function runAdminAction(
       message: isAppError(error) ? error.message : GENERIC,
     };
   }
-  revalidatePath(returnTo);
-  redirect(`${returnTo}?notice=${encodeURIComponent(notice)}`);
+  const [path] = returnTo.split("?");
+  revalidatePath(path ?? returnTo);
+  redirect(
+    `${returnTo}${returnTo.includes("?") ? "&" : "?"}notice=${encodeURIComponent(notice)}`,
+  );
 }

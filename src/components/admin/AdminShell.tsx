@@ -22,6 +22,7 @@ export const ADMIN_NAV: ReadonlyArray<AdminNavItem> = [
   { label: "Orders", href: routes.adminOrders },
   { label: "Payment review", href: routes.adminReview },
   { label: "Refunds", href: routes.adminRefunds },
+  { label: "Operations", href: routes.adminOperations },
 ];
 
 export function AdminShell({
