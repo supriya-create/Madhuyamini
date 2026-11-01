@@ -152,25 +152,98 @@ export function orderConfirmedMessage(params: {
   };
 }
 
+export type CancellationEmailReason =
+  "timeout" | "customer" | "shop" | "returned" | "lost";
+
 export function orderCancelledMessage(params: {
   to: string;
   orderNumber: string;
-  reason: "timeout" | "customer";
+  reason: CancellationEmailReason;
   cartUrl: string;
+  /** True when a refund has been queued for a payment that reached us. */
+  refundQueued?: boolean;
 }): EmailMessage {
-  const why =
-    params.reason === "timeout"
-      ? "the payment was not completed in time, so the pieces were released"
-      : "you cancelled it";
+  const why: Record<CancellationEmailReason, string> = {
+    timeout:
+      "the payment was not completed in time, so the pieces were released",
+    customer: "you cancelled it",
+    shop: "we were unable to fulfil it",
+    returned: "the parcel could not be delivered and has come back to us",
+    lost: "the parcel was lost in transit and the carrier has confirmed it",
+  };
+  const money = params.refundQueued
+    ? "A refund of the amount you paid has been requested with our payment provider; you will receive a separate email about it."
+    : params.reason === "timeout" || params.reason === "customer"
+      ? "Nothing has been charged. Your cart is still waiting if you would like to try again."
+      : "Nothing further is owed. We are sorry for the trouble.";
   return {
     to: params.to,
     subject: `Order ${params.orderNumber} cancelled — ${BRAND}`,
     ...layout(
       [
-        `Order ${params.orderNumber} has been cancelled because ${why}.`,
-        `Nothing has been charged. Your cart is still waiting if you would like to try again.`,
+        `Order ${params.orderNumber} has been cancelled because ${why[params.reason]}.`,
+        money,
       ],
       { label: "Return to your cart", url: params.cartUrl },
+    ),
+  };
+}
+
+export function orderShippedMessage(params: {
+  to: string;
+  orderNumber: string;
+  carrier: string;
+  trackingNumber: string | null;
+  trackingUrl: string | null;
+  trackUrl: string;
+}): EmailMessage {
+  const tracking = params.trackingNumber
+    ? `It was handed to ${params.carrier} with tracking number ${params.trackingNumber}.`
+    : `It was handed to ${params.carrier}.`;
+  return {
+    to: params.to,
+    subject: `Order ${params.orderNumber} is on its way — ${BRAND}`,
+    ...layout(
+      [`Good news: order ${params.orderNumber} has been shipped.`, tracking],
+      params.trackingUrl
+        ? { label: "Track the parcel", url: params.trackingUrl }
+        : { label: "View your order", url: params.trackUrl },
+    ),
+  };
+}
+
+export function orderDeliveredMessage(params: {
+  to: string;
+  orderNumber: string;
+  trackUrl: string;
+}): EmailMessage {
+  return {
+    to: params.to,
+    subject: `Order ${params.orderNumber} has been delivered — ${BRAND}`,
+    ...layout(
+      [
+        `Order ${params.orderNumber} has been delivered.`,
+        "We hope the pieces bring you joy. If anything is not as expected, reply to this email with your order number.",
+      ],
+      { label: "View your order", url: params.trackUrl },
+    ),
+  };
+}
+
+export function orderDeliveryFailedMessage(params: {
+  to: string;
+  orderNumber: string;
+  trackUrl: string;
+}): EmailMessage {
+  return {
+    to: params.to,
+    subject: `Order ${params.orderNumber} could not be delivered — ${BRAND}`,
+    ...layout(
+      [
+        `The carrier could not deliver order ${params.orderNumber}, and the parcel is being returned to us.`,
+        "Once it is back and checked we will close the order, and any payment that reached us will be refunded. If you would like the pieces re-sent, reply to this email with your order number.",
+      ],
+      { label: "View your order", url: params.trackUrl },
     ),
   };
 }
@@ -179,13 +252,23 @@ export function refundRequestedMessage(params: {
   to: string;
   orderNumber: string;
   amount: string;
-  reason: "late_capture_no_stock" | "duplicate_payment" | string;
+  reason: string;
   trackUrl: string;
 }): EmailMessage {
-  const why =
-    params.reason === "duplicate_payment"
-      ? "a second payment reached us for an order that was already paid"
-      : "the payment reached us after the pieces had been released and they are no longer available";
+  const reasons: Record<string, string> = {
+    duplicate_payment:
+      "a second payment reached us for an order that was already paid",
+    late_capture_no_stock:
+      "the payment reached us after the pieces had been released and they are no longer available",
+    cancelled_by_shop: "we were unable to fulfil your order",
+    review_cancelled:
+      "we could not complete your order after checking the payment",
+    delivery_failed:
+      "the parcel could not be delivered and has come back to us",
+    carrier_lost: "the parcel was lost in transit",
+    partial_refund: "part of your order is being refunded",
+  };
+  const why = reasons[params.reason] ?? "your order could not be completed";
   return {
     to: params.to,
     subject: `Refund of ${params.amount} for order ${params.orderNumber} — ${BRAND}`,

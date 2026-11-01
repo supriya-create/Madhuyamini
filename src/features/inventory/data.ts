@@ -102,6 +102,24 @@ export async function closeReservation(
   return result.count === 1;
 }
 
+/**
+ * Moves `stock_on_hand` by a signed `delta` (A3). False = the row would go
+ * below its holds or below zero; nothing is written.
+ */
+export async function adjustStockOnHand(
+  tx: Tx,
+  variantId: string,
+  delta: number,
+): Promise<boolean> {
+  const count = await tx.$executeRaw(Prisma.sql`
+    UPDATE inventory SET stock_on_hand = stock_on_hand + ${delta}
+     WHERE variant_id = ${variantId}::uuid
+       AND stock_on_hand + ${delta} >= reserved
+       AND stock_on_hand + ${delta} >= 0
+  `);
+  return count === 1;
+}
+
 /** Locks the inventory rows (ascending variant id) and returns their levels. */
 export function lockInventoryRows(tx: Tx, variantIds: readonly string[]) {
   if (variantIds.length === 0) return Promise.resolve([]);

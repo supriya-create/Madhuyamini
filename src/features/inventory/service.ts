@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { Prisma } from "@/generated/prisma/client";
+import type { InventoryAdjustmentKind } from "@/generated/prisma/enums";
 import { AppError } from "@/server/errors";
 
 import * as data from "./data";
@@ -146,6 +147,118 @@ export async function releaseOrderHolds(
       });
     }
     units += hold.quantity;
+  }
+  return units;
+}
+
+/** Every stock change outside the reservation lifecycle (docs/admin.md §5.3, A3). */
+export interface AdjustmentInput {
+  readonly variantId: string;
+  readonly kind: InventoryAdjustmentKind;
+  /** Signed, never zero. */
+  readonly delta: number;
+  readonly reason: string;
+  /** Null only for the system restock on cancellation. */
+  readonly actorId: string | null;
+  readonly orderId?: string | null;
+  readonly auditId?: string | null;
+}
+
+export interface AdjustmentResult {
+  readonly adjustmentId: string;
+  readonly stockBefore: number;
+  readonly stockAfter: number;
+  readonly reserved: number;
+}
+
+export class AdjustmentRefusedError extends AppError {
+  readonly variantId: string;
+
+  constructor(variantId: string, message: string) {
+    super(message, { code: "INVENTORY_ADJUSTMENT_REFUSED", status: 409 });
+    this.variantId = variantId;
+  }
+}
+
+/**
+ * Audited stock movement: locks the inventory row, applies the delta as a
+ * conditional update and records before/after/reserved with the reason and
+ * actor. Callers adjusting several variants must call this in ascending
+ * variant id order (lock order) inside one transaction.
+ */
+export async function applyAdjustment(
+  tx: Tx,
+  input: AdjustmentInput,
+): Promise<AdjustmentResult> {
+  if (!Number.isInteger(input.delta) || input.delta === 0) {
+    throw new AdjustmentRefusedError(
+      input.variantId,
+      "An adjustment must move stock by a whole, non-zero number.",
+    );
+  }
+  const [level] = await data.lockInventoryRows(tx, [input.variantId]);
+  if (!level) {
+    throw new AdjustmentRefusedError(
+      input.variantId,
+      "No inventory row for this variant.",
+    );
+  }
+  const moved = await data.adjustStockOnHand(tx, input.variantId, input.delta);
+  if (!moved) {
+    throw new AdjustmentRefusedError(
+      input.variantId,
+      "Stock cannot go below the units currently held for pending orders.",
+    );
+  }
+  const row = await tx.inventoryAdjustment.create({
+    data: {
+      variantId: input.variantId,
+      kind: input.kind,
+      delta: input.delta,
+      stockBefore: level.stock_on_hand,
+      stockAfter: level.stock_on_hand + input.delta,
+      reservedAtTime: level.reserved,
+      reason: input.reason,
+      actorId: input.actorId,
+      orderId: input.orderId ?? null,
+      auditId: input.auditId ?? null,
+    },
+    select: { id: true },
+  });
+  return {
+    adjustmentId: row.id,
+    stockBefore: level.stock_on_hand,
+    stockAfter: level.stock_on_hand + input.delta,
+    reserved: level.reserved,
+  };
+}
+
+/**
+ * Unshipped cancellation of a confirmed order: the sold units go back on the
+ * shelf, one audited adjustment per line, in lock order (docs/admin.md §5.4).
+ */
+export async function restockForOrder(
+  tx: Tx,
+  input: {
+    readonly orderId: string;
+    readonly lines: readonly StockLine[];
+    readonly actorId: string | null;
+    readonly auditId: string | null;
+    readonly reason: string;
+  },
+): Promise<number> {
+  let units = 0;
+  for (const line of inLockOrder(input.lines)) {
+    await applyAdjustment(tx, {
+      variantId: line.variantId,
+      kind: "RESTOCK_ON_CANCEL",
+      delta: line.quantity,
+      reason: input.reason,
+      actorId: input.actorId,
+      orderId: input.orderId,
+      auditId: input.auditId,
+    });
+    units += line.quantity;
   }
   return units;
 }

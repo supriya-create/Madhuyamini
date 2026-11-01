@@ -28,6 +28,8 @@ export const routes = {
   adminReauth: "/admin/reauth",
   adminOrders: "/admin/orders",
   adminOrder: (id: string) => `/admin/orders/${id}`,
+  adminOrderCancel: (id: string) => `/admin/orders/${id}/cancel`,
+  adminOrderInspection: (id: string) => `/admin/orders/${id}/inspection`,
   adminReview: "/admin/payments/review",
   adminRefunds: "/admin/payments/refunds",
   adminOperations: "/admin/operations",

@@ -119,6 +119,12 @@ const timelineLabels: Readonly<Record<string, string>> = {
   "payment.late_capture": "Payment received after the deadline",
   "refund.requested": "Refund requested",
   "refund.processed": "Refund completed",
+  "order.processing": "Being prepared for dispatch",
+  "order.shipped": "Shipped",
+  "order.delivered": "Delivered",
+  "order.delivery_failed": "Delivery was unsuccessful; parcel returning to us",
+  "order.returned": "Parcel received back",
+  "payment.cod_collected": "Cash collected on delivery",
 };
 
 export function maskEmail(email: string): string {

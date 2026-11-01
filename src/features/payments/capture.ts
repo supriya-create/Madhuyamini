@@ -9,13 +9,13 @@ import {
 import * as orders from "@/features/orders/data";
 import { nextOrderStatus } from "@/features/orders/transitions";
 import {
-  enqueueNotification,
   enqueueOpsAlert,
   enqueueOrderConfirmed,
 } from "@/server/notifications/outbox";
 import { db } from "@/server/db";
 
 import * as data from "./data";
+import { queueRefundIntent } from "./refunds";
 
 /**
  * Applying provider facts to our records: transaction T5 (capture) and T6
@@ -279,46 +279,12 @@ async function queueRefund(
   facts: CaptureFacts,
   reason: "late_capture_no_stock" | "duplicate_payment",
 ): Promise<void> {
-  const reference = `${order.orderNumber}-R${attempt.attemptNo}`;
-  await tx.refund.createMany({
-    data: [
-      {
-        orderId: order.id,
-        paymentId: attempt.id,
-        amountInPaise: facts.amountInPaise,
-        reason,
-        reference,
-      },
-    ],
-    skipDuplicates: true,
-  });
-  await orders.recordOrderEvent(tx, {
-    orderId: order.id,
-    type: "refund.requested",
+  await queueRefundIntent(tx, {
+    order,
+    attempt,
+    amountInPaise: facts.amountInPaise,
     actor: facts.actor,
-    data: { reference, amountInPaise: facts.amountInPaise, reason },
-  });
-  await enqueueNotification(tx, {
-    kind: "order.refund_requested",
-    orderId: order.id,
-    recipient: order.email,
-    dedupeKey: `order.refund_requested:${reference}`,
-    payload: {
-      orderId: order.id,
-      orderNumber: order.orderNumber,
-      amountInPaise: facts.amountInPaise,
-      reason,
-    },
-  });
-  await enqueueOpsAlert(tx, {
-    key: `refund:${reference}`,
-    orderId: order.id,
-    payload: {
-      orderId: order.id,
-      orderNumber: order.orderNumber,
-      reason,
-      amountInPaise: facts.amountInPaise,
-    },
+    reason,
   });
 }
 

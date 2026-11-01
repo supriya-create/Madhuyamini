@@ -9,11 +9,17 @@ import {
   opsAlertMessage,
   orderCancelledMessage,
   orderConfirmedMessage,
+  orderDeliveredMessage,
+  orderDeliveryFailedMessage,
+  orderShippedMessage,
   ownerNewOrderMessage,
   recoveryCodeUsedMessage,
   refundRequestedMessage,
 } from "@/server/email/templates";
-import type { OrderEmailSummary } from "@/server/email/templates";
+import type {
+  CancellationEmailReason,
+  OrderEmailSummary,
+} from "@/server/email/templates";
 import type { EmailMessage } from "@/server/email/types";
 
 /**
@@ -105,12 +111,52 @@ export async function renderNotification(
     case "order.cancelled": {
       const orderNumber = field(row.payload, "orderNumber");
       if (!orderNumber) throw new NotificationRenderError("no order number");
+      const reason = field(row.payload, "reason");
+      const known: readonly CancellationEmailReason[] = [
+        "timeout",
+        "customer",
+        "shop",
+        "returned",
+        "lost",
+      ];
       return orderCancelledMessage({
         to: row.recipient,
         orderNumber,
-        reason:
-          field(row.payload, "reason") === "customer" ? "customer" : "timeout",
+        reason: known.find((value) => value === reason) ?? "timeout",
         cartUrl: absolute(routes.cart),
+        refundQueued: field(row.payload, "refundQueued") === "yes",
+      });
+    }
+    case "order.shipped": {
+      const orderNumber = field(row.payload, "orderNumber");
+      const carrier = field(row.payload, "carrier");
+      if (!orderNumber || !carrier)
+        throw new NotificationRenderError("shipment payload incomplete");
+      return orderShippedMessage({
+        to: row.recipient,
+        orderNumber,
+        carrier,
+        trackingNumber: field(row.payload, "trackingNumber"),
+        trackingUrl: field(row.payload, "trackingUrl"),
+        trackUrl: absolute(routes.trackOrder),
+      });
+    }
+    case "order.delivered": {
+      const orderNumber = field(row.payload, "orderNumber");
+      if (!orderNumber) throw new NotificationRenderError("no order number");
+      return orderDeliveredMessage({
+        to: row.recipient,
+        orderNumber,
+        trackUrl: absolute(routes.trackOrder),
+      });
+    }
+    case "order.delivery_failed": {
+      const orderNumber = field(row.payload, "orderNumber");
+      if (!orderNumber) throw new NotificationRenderError("no order number");
+      return orderDeliveryFailedMessage({
+        to: row.recipient,
+        orderNumber,
+        trackUrl: absolute(routes.trackOrder),
       });
     }
     case "order.refund_requested": {
