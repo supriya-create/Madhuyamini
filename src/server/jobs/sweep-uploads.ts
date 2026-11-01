@@ -39,8 +39,20 @@ export async function runSweepUploads(
   const actor = systemActor("upload-sweep");
 
   const rows = await db.productImageUpload.findMany({
-    where: { status: "ISSUED", issuedAt: { lt: cutoff } },
-    select: { id: true, publicId: true, folder: true, productId: true },
+    where: {
+      OR: [
+        { status: "ISSUED", issuedAt: { lt: cutoff } },
+        // Removed images whose delete at Cloudinary failed at the time.
+        { status: "DISCARDED", sweepError: { not: null } },
+      ],
+    },
+    select: {
+      id: true,
+      publicId: true,
+      folder: true,
+      productId: true,
+      status: true,
+    },
     orderBy: { issuedAt: "asc" },
     take: options.limit ?? 50,
   });
@@ -64,7 +76,7 @@ export async function runSweepUploads(
         ...base,
         outcome: "REFUSED",
         errorCode: "UPLOAD_OUTSIDE_FOLDER",
-        after: { id: row.id, publicId: row.publicId, status: "ISSUED" },
+        after: { id: row.id, publicId: row.publicId, status: row.status },
       });
       summary.skipped += 1;
       continue;
@@ -72,7 +84,7 @@ export async function runSweepUploads(
     try {
       const result = await destroy(row.publicId);
       await db.productImageUpload.updateMany({
-        where: { id: row.id, status: "ISSUED" },
+        where: { id: row.id, status: { in: ["ISSUED", "DISCARDED"] } },
         data: { status: "SWEPT", resolvedAt: now, sweepError: null },
       });
       await writeAudit({
@@ -84,14 +96,14 @@ export async function runSweepUploads(
       summary.swept += 1;
     } catch (error) {
       await db.productImageUpload.updateMany({
-        where: { id: row.id, status: "ISSUED" },
+        where: { id: row.id, status: { in: ["ISSUED", "DISCARDED"] } },
         data: { sweepError: describeError(error) },
       });
       await writeAudit({
         ...base,
         outcome: "FAILED",
         errorCode: "UPLOAD_SWEEP_FAILED",
-        after: { id: row.id, publicId: row.publicId, status: "ISSUED" },
+        after: { id: row.id, publicId: row.publicId, status: row.status },
       });
       summary.errors += 1;
     }

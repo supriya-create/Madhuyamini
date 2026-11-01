@@ -315,6 +315,21 @@ describe("admin and upload settings", () => {
           CLOUDINARY_API_SECRET: "shh",
         }),
       ).cloudinary,
-    ).toEqual({ cloudName: "demo", apiKey: "123", apiSecret: "shh" });
+    ).toEqual({
+      cloudName: "demo",
+      apiKey: "123",
+      apiSecret: "shh",
+      uploadPreset: null,
+    });
+    expect(
+      parseEnv(
+        withDb({
+          CLOUDINARY_CLOUD_NAME: "demo",
+          CLOUDINARY_API_KEY: "123",
+          CLOUDINARY_API_SECRET: "shh",
+          CLOUDINARY_UPLOAD_PRESET: "madhuyamini-signed",
+        }),
+      ).cloudinary?.uploadPreset,
+    ).toBe("madhuyamini-signed");
   });
 });

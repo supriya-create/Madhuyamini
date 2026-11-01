@@ -64,6 +64,8 @@ export interface ServerEnv {
     readonly cloudName: string;
     readonly apiKey: string;
     readonly apiSecret: string;
+    /** A signed upload preset that caps bytes and dimensions at Cloudinary (docs/admin.md §5.2). */
+    readonly uploadPreset: string | null;
   } | null;
 }
 
@@ -143,6 +145,7 @@ const rawEnvSchema = z
     CLOUDINARY_CLOUD_NAME: optionalString,
     CLOUDINARY_API_KEY: optionalString,
     CLOUDINARY_API_SECRET: optionalString,
+    CLOUDINARY_UPLOAD_PRESET: optionalString,
   })
   .superRefine((value, ctx) => {
     if (value.SITE_ENV !== "production") return;
@@ -216,6 +219,7 @@ export function parseEnv(source: EnvSource): ServerEnv {
     CLOUDINARY_CLOUD_NAME: source.CLOUDINARY_CLOUD_NAME,
     CLOUDINARY_API_KEY: source.CLOUDINARY_API_KEY,
     CLOUDINARY_API_SECRET: source.CLOUDINARY_API_SECRET,
+    CLOUDINARY_UPLOAD_PRESET: source.CLOUDINARY_UPLOAD_PRESET,
   });
 
   if (!result.success) {
@@ -274,6 +278,7 @@ export function parseEnv(source: EnvSource): ServerEnv {
             cloudName: result.data.CLOUDINARY_CLOUD_NAME,
             apiKey: result.data.CLOUDINARY_API_KEY,
             apiSecret: result.data.CLOUDINARY_API_SECRET,
+            uploadPreset: result.data.CLOUDINARY_UPLOAD_PRESET ?? null,
           }
         : null,
   };

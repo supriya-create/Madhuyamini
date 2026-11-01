@@ -18,3 +18,7 @@ process.env.ORDER_NOTIFY_EMAIL = "owner@example.com";
 process.env.CRON_SECRET = "integration-cron-secret-value";
 // Throwaway TOTP key for the staff second-factor tests (32 zero-free bytes, base64url).
 process.env.ADMIN_TOTP_KEY ??= "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA";
+// Throwaway Cloudinary values: signatures are computed locally; nothing is uploaded.
+process.env.CLOUDINARY_CLOUD_NAME ??= "test-cloud";
+process.env.CLOUDINARY_API_KEY ??= "123456789012345";
+process.env.CLOUDINARY_API_SECRET ??= "integration-test-cloudinary-secret";

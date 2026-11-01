@@ -26,6 +26,10 @@ export class CloudinaryError extends AppError {
   }
 }
 
+export function cloudinaryConfigured(): boolean {
+  return env.cloudinary !== null;
+}
+
 export function cloudinaryConfig(): NonNullable<typeof env.cloudinary> {
   if (!env.cloudinary) {
     throw new CloudinaryError("Cloudinary is not configured on this server.", {
