@@ -349,6 +349,7 @@ export const orderActionSelect = {
       method: true,
       status: true,
       amountInPaise: true,
+      providerOrderId: true,
     },
     orderBy: { attemptNo: "desc" },
   },

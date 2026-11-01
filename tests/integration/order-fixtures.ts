@@ -2,6 +2,7 @@ import { addToCart } from "@/features/cart/service";
 import { getCheckoutView, placeOrder } from "@/features/checkout/service";
 import type { AddressSnapshot } from "@/features/checkout/types";
 import { applyCapture } from "@/features/payments/capture";
+import { getFakeGateway } from "@/server/payments";
 
 import {
   createCategory,
@@ -25,6 +26,7 @@ export const fixtureAddress: AddressSnapshot = {
 };
 
 export interface PlacedOrder {
+  readonly providerPaymentId?: string;
   readonly orderId: string;
   readonly orderNumber: string;
   readonly variantId: string;
@@ -94,9 +96,18 @@ export async function confirmedOnlineOrder(
   options: Parameters<typeof placeTestOrder>[1] = {},
 ): Promise<PlacedOrder> {
   const placed = await placeTestOrder("RAZORPAY", options);
+  const attempt = await testDb.payment.findUniqueOrThrow({
+    where: { id: placed.attemptId },
+    select: { providerOrderId: true },
+  });
+  if (!attempt.providerOrderId) throw new Error("no provider order");
+  const { providerPaymentId } = getFakeGateway().simulatePayment(
+    attempt.providerOrderId,
+    { status: "captured" },
+  );
   const outcome = await applyCapture({
     attemptId: placed.attemptId,
-    providerPaymentId: `pay_${placed.orderNumber}`,
+    providerPaymentId,
     amountInPaise: placed.totalInPaise,
     currency: "INR",
     actor: "WEBHOOK",
@@ -104,7 +115,7 @@ export async function confirmedOnlineOrder(
     now: new Date(),
   });
   if (outcome !== "confirmed") throw new Error(`capture outcome ${outcome}`);
-  return placed;
+  return { ...placed, providerPaymentId };
 }
 
 export async function stockOf(variantId: string) {

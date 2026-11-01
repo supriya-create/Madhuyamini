@@ -172,6 +172,18 @@ export function createFakeGateway(): FakePaymentGateway {
       const payment = payments.get(providerPaymentId);
       if (!payment || payment.status !== "captured")
         return reject("PAYMENT_PROVIDER_REJECTED", "payment not captured");
+      // Like the real provider: partial refunds leave the payment captured
+      // until the refunded total reaches the captured amount.
+      const refundedSoFar = [...refunds.values()]
+        .filter(
+          (candidate) => candidate.providerPaymentId === providerPaymentId,
+        )
+        .reduce((sum, candidate) => sum + candidate.amountInPaise, 0);
+      if (refundedSoFar + input.amountInPaise > payment.amountInPaise)
+        return reject(
+          "PAYMENT_PROVIDER_REJECTED",
+          "refund exceeds the captured amount",
+        );
       const refund: GatewayRefund = {
         providerRefundId: nextId("rfnd"),
         providerPaymentId,
@@ -181,7 +193,9 @@ export function createFakeGateway(): FakePaymentGateway {
       };
       refunds.set(refund.providerRefundId, refund);
       refundReferences.set(input.reference, refund.providerRefundId);
-      payments.set(providerPaymentId, { ...payment, status: "refunded" });
+      if (refundedSoFar + input.amountInPaise >= payment.amountInPaise) {
+        payments.set(providerPaymentId, { ...payment, status: "refunded" });
+      }
       if (injected) return fail("createRefund", injected.retryable);
       return Promise.resolve(refund);
     },

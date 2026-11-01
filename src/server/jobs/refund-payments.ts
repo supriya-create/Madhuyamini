@@ -6,7 +6,7 @@ import {
   minutesToMs,
 } from "@/config/checkout-policy";
 import * as orders from "@/features/orders/data";
-import * as payments from "@/features/payments/data";
+import { settleAttemptIfFullyRefunded } from "@/features/payments/refunds";
 import { db } from "@/server/db";
 import { enqueueOpsAlert } from "@/server/notifications/outbox";
 import { getPaymentGateway } from "@/server/payments";
@@ -241,7 +241,7 @@ async function recordProviderRefund(
         lastError: null,
       },
     });
-    if (processed) await payments.markAttemptRefunded(tx, refund.paymentId);
+    if (processed) await settleAttemptIfFullyRefunded(tx, refund.paymentId);
     await orders.recordOrderEvent(tx, {
       orderId: refund.orderId,
       type: processed ? "refund.processed" : "refund.requested_at_provider",

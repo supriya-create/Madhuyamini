@@ -266,7 +266,7 @@ export function refundRequestedMessage(params: {
     delivery_failed:
       "the parcel could not be delivered and has come back to us",
     carrier_lost: "the parcel was lost in transit",
-    partial_refund: "part of your order is being refunded",
+    shop_refund: "we have issued a refund on your order",
   };
   const why = reasons[params.reason] ?? "your order could not be completed";
   return {

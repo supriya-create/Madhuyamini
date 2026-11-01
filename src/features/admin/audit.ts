@@ -124,6 +124,8 @@ export interface AuditedWork<T> {
   readonly after?: unknown;
   /** When the target id is only known after the work (creates). */
   readonly targetId?: string;
+  /** Replaces the reason given up front (for example with provider evidence). */
+  readonly reason?: string;
 }
 
 /**
@@ -177,6 +179,7 @@ export async function runAudited<T>(
           id: auditId,
           outcome: "SUCCESS",
           targetId: outcome.targetId ?? base.targetId,
+          reason: outcome.reason ?? base.reason,
           before: outcome.before,
           after: outcome.after,
         },
@@ -184,6 +187,62 @@ export async function runAudited<T>(
       );
       return outcome.result;
     });
+  } catch (error) {
+    if (!(error instanceof StaffGateError)) {
+      await writeAudit({
+        ...base,
+        outcome: "FAILED",
+        errorCode: isAppError(error) ? error.code : "UNEXPECTED",
+      }).catch(() => undefined);
+    }
+    throw error;
+  }
+}
+
+/**
+ * For operations that must talk to the provider or run their own
+ * transactions (re-check, attach a payment, external refunds, run a job):
+ * authorise first (REFUSED on failure), run the work with no transaction
+ * open, then record SUCCESS or FAILED in a transaction of its own. The work
+ * itself is responsible for its atomicity (docs/admin.md §6 A6, A8, A12).
+ */
+export async function runAuditedExternal<T>(
+  options: RunAuditedOptions,
+  work: () => Promise<AuditedWork<T>>,
+): Promise<T> {
+  const actor = actorFromContext(options.ctx);
+  const base = {
+    actor,
+    action: options.action,
+    targetType: options.targetType,
+    targetId: options.targetId ?? null,
+    reason: options.reason ?? null,
+    requestIp: options.requestIp ?? null,
+    grantId: options.grantId ?? null,
+  };
+  try {
+    await requirePermission(options.ctx, options.capability, {
+      now: options.now,
+    });
+  } catch (error) {
+    await writeAudit({
+      ...base,
+      outcome: "REFUSED",
+      errorCode: isAppError(error) ? error.code : "UNKNOWN",
+    }).catch(() => undefined);
+    throw error;
+  }
+  try {
+    const outcome = await work();
+    await writeAudit({
+      ...base,
+      outcome: "SUCCESS",
+      targetId: outcome.targetId ?? base.targetId,
+      reason: outcome.reason ?? base.reason,
+      before: outcome.before,
+      after: outcome.after,
+    });
+    return outcome.result;
   } catch (error) {
     if (!(error instanceof StaffGateError)) {
       await writeAudit({

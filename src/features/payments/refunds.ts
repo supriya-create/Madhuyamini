@@ -22,7 +22,7 @@ export type RefundReason =
   | "review_cancelled"
   | "delivery_failed"
   | "carrier_lost"
-  | "partial_refund";
+  | "shop_refund";
 
 export interface RefundIntentInput {
   readonly order: {
@@ -94,6 +94,33 @@ export async function queueRefundIntent(
   return { reference, created: true };
 }
 
+/**
+ * What the provider actually captured for an attempt: the amount recorded on
+ * the `payment.captured` event (a mismatch keeps the attempt's own amount
+ * untouched), falling back to the attempt amount.
+ */
+export async function capturedAmountInPaise(
+  tx: Prisma.TransactionClient,
+  orderId: string,
+  attempt: { readonly attemptNo: number; readonly amountInPaise: number },
+): Promise<number> {
+  const event = await tx.orderEvent.findFirst({
+    where: {
+      orderId,
+      type: "payment.captured",
+      data: { path: ["attemptNo"], equals: attempt.attemptNo },
+    },
+    orderBy: { createdAt: "desc" },
+    select: { data: true },
+  });
+  const data = event?.data;
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    const amount = (data as Record<string, unknown>).amountInPaise;
+    if (typeof amount === "number" && Number.isInteger(amount)) return amount;
+  }
+  return attempt.amountInPaise;
+}
+
 /** Captured online attempts of an order minus what was already queued or refunded. */
 export async function refundableAttempts(
   tx: Prisma.TransactionClient,
@@ -102,13 +129,18 @@ export async function refundableAttempts(
   Array<{
     id: string;
     attemptNo: number;
+    /** Captured at the provider (evidence), not the amount asked for. */
     amountInPaise: number;
     refundedInPaise: number;
     refundCount: number;
   }>
 > {
   const attempts = await tx.payment.findMany({
-    where: { orderId, method: "RAZORPAY", status: "CAPTURED" },
+    where: {
+      orderId,
+      method: "RAZORPAY",
+      status: { in: ["CAPTURED", "REFUNDED"] },
+    },
     select: {
       id: true,
       attemptNo: true,
@@ -120,14 +152,52 @@ export async function refundableAttempts(
     },
     orderBy: { attemptNo: "asc" },
   });
-  return attempts.map((attempt) => ({
-    id: attempt.id,
-    attemptNo: attempt.attemptNo,
-    amountInPaise: attempt.amountInPaise,
-    refundedInPaise: attempt.refunds.reduce(
-      (sum, r) => sum + r.amountInPaise,
-      0,
-    ),
-    refundCount: attempt.refunds.length,
-  }));
+  const result = [];
+  for (const attempt of attempts) {
+    result.push({
+      id: attempt.id,
+      attemptNo: attempt.attemptNo,
+      amountInPaise: await capturedAmountInPaise(tx, orderId, attempt),
+      refundedInPaise: attempt.refunds.reduce(
+        (sum, r) => sum + r.amountInPaise,
+        0,
+      ),
+      refundCount: attempt.refunds.length,
+    });
+  }
+  return result;
+}
+
+/**
+ * After a refund is processed: the attempt becomes REFUNDED only once the
+ * processed refunds cover what was captured, so partial refunds leave it
+ * CAPTURED and further refunds possible (docs/admin.md §5.5).
+ */
+export async function settleAttemptIfFullyRefunded(
+  tx: Prisma.TransactionClient,
+  paymentId: string,
+): Promise<boolean> {
+  const attempt = await tx.payment.findUnique({
+    where: { id: paymentId },
+    select: {
+      id: true,
+      orderId: true,
+      attemptNo: true,
+      amountInPaise: true,
+      status: true,
+      refunds: {
+        where: { status: "PROCESSED" },
+        select: { amountInPaise: true },
+      },
+    },
+  });
+  if (!attempt || attempt.status !== "CAPTURED") return false;
+  const captured = await capturedAmountInPaise(tx, attempt.orderId, attempt);
+  const refunded = attempt.refunds.reduce((sum, r) => sum + r.amountInPaise, 0);
+  if (refunded < captured) return false;
+  const result = await tx.payment.updateMany({
+    where: { id: paymentId, status: "CAPTURED" },
+    data: { status: "REFUNDED" },
+  });
+  return result.count === 1;
 }

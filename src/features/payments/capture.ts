@@ -143,7 +143,7 @@ export async function applyCapture(
   });
 }
 
-type OrderUnderLock = {
+export type OrderUnderLock = {
   id: string;
   orderNumber: string;
   status: OrderStatus;
@@ -154,12 +154,16 @@ type OrderUnderLock = {
   items: ReadonlyArray<{ variantId: string; quantity: number }>;
 };
 
-async function confirmOrder(
+/**
+ * Confirms an order under the caller's lock: status, cart, event, emails.
+ * Shared by the capture path and the admin review (`admin_confirmed`).
+ */
+export async function confirmOrder(
   tx: Prisma.TransactionClient,
   order: OrderUnderLock,
   now: Date,
   actor: OrderActor,
-  event: "payment_captured" | "late_capture_restocked",
+  event: "payment_captured" | "late_capture_restocked" | "admin_confirmed",
 ): Promise<void> {
   const next = nextOrderStatus(order.status, event);
   if (next !== "CONFIRMED")

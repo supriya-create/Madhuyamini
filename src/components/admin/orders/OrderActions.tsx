@@ -5,6 +5,12 @@ import { SelectField } from "@/components/forms/SelectField";
 import { TextareaField } from "@/components/forms/TextareaField";
 import { ButtonLink } from "@/components/ui/Button";
 import {
+  acceptMismatchAction,
+  attachPaymentAction,
+  createRefundAction,
+  recheckWithProviderAction,
+} from "@/features/admin/payments/actions";
+import {
   addStaffNoteAction,
   collectCodAction,
   confirmCarrierLossAction,
@@ -288,6 +294,126 @@ export function OrderActions({ order }: { order: AdminOrderDetail }) {
             Open the cancellation form
           </ButtonLink>
         </div>
+      ),
+    });
+  }
+  if (actions.recheck) {
+    groups.push({
+      title: "Re-check with the payment provider",
+      body: (
+        <AdminActionForm
+          action={recheckWithProviderAction}
+          hidden={hidden}
+          submitLabel="Ask the provider again"
+        >
+          <p className={styles.muted}>
+            Asks Razorpay what happened to each open or failed attempt and
+            applies the answer. The usual fix for &ldquo;paid but stuck&rdquo;.
+          </p>
+        </AdminActionForm>
+      ),
+    });
+  }
+  if (actions.attachPayment) {
+    groups.push({
+      title: "Attach a provider payment",
+      danger: true,
+      body: (
+        <AdminActionForm
+          action={attachPaymentAction}
+          hidden={hidden}
+          submitLabel="Fetch and apply the payment"
+          variant="secondary"
+        >
+          <Field
+            id="attach-payment-id"
+            name="providerPaymentId"
+            label="Razorpay payment id"
+            hint="From the Razorpay dashboard, for example pay_…. The server fetches it and applies what the provider reports."
+            autoComplete="off"
+            spellCheck={false}
+            required
+          />
+          <TextareaField
+            id="attach-reason"
+            name="reason"
+            label="Reason"
+            required
+            maxLength={500}
+          />
+          <p className={styles.muted}>
+            Admin only, with a fresh second factor. Nothing is marked paid from
+            what you type: the provider&rsquo;s record decides.
+          </p>
+        </AdminActionForm>
+      ),
+    });
+  }
+  if (actions.acceptMismatch) {
+    groups.push({
+      title: "Accept the captured amount and confirm",
+      danger: true,
+      body: (
+        <AdminActionForm
+          action={acceptMismatchAction}
+          hidden={hidden}
+          submitLabel="Accept and confirm the order"
+          variant="secondary"
+        >
+          <TextareaField
+            id="accept-reason"
+            name="reason"
+            label="Reason"
+            required
+            maxLength={500}
+          />
+          <Field
+            id="accept-confirm"
+            name="confirmOrderNumber"
+            label={`Type ${order.orderNumber} to confirm`}
+            autoComplete="off"
+            autoCapitalize="characters"
+            required
+          />
+          <p className={styles.muted}>
+            Admin only, with a fresh second factor. Underpayments are refused;
+            cancel and refund those instead.
+          </p>
+        </AdminActionForm>
+      ),
+    });
+  }
+  if (actions.refundableInPaise > 0) {
+    groups.push({
+      title: "Refund",
+      danger: true,
+      body: (
+        <AdminActionForm
+          action={createRefundAction}
+          hidden={hidden}
+          submitLabel="Queue the refund"
+          variant="secondary"
+        >
+          <Field
+            id="refund-amount"
+            name="amount"
+            label="Amount (₹)"
+            hint={`Up to ${formatINR(actions.refundableInPaise)} can still be refunded.`}
+            inputMode="decimal"
+            required
+          />
+          <TextareaField
+            id="refund-reason"
+            name="reason"
+            label="Reason"
+            required
+            maxLength={500}
+          />
+          <p className={styles.muted}>
+            Admin only, with a fresh second factor. The refund job requests it
+            from the provider and emails the customer.
+          </p>
+        </AdminActionForm>
       ),
     });
   }

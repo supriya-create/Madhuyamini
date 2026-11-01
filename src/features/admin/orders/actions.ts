@@ -1,15 +1,9 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
-
 import { parseForm, pickFormValues } from "@/features/auth/form-data";
 import type { FormState } from "@/features/auth/schemas";
-import { requireStaffSession } from "@/server/auth/staff";
-import { isAppError } from "@/server/errors";
-import { routes } from "@/lib/routes";
 
-import { ReauthRequiredError } from "../authz";
+import { orderIdFrom, runOrderAction } from "./action-support";
 import {
   cancelOrderSchema,
   carrierLossSchema,
@@ -17,7 +11,6 @@ import {
   codReverseSchema,
   deliveryFailedSchema,
   inspectionSchema,
-  orderIdSchema,
   parcelReturnedSchema,
   shipSchema,
   staffNoteSchema,
@@ -42,52 +35,6 @@ import {
  * and audits), and comes back to the order page with a notice. A sensitive
  * action that needs a fresh second factor sends the operator to re-auth.
  */
-
-export type OrderNotice =
-  | "processing"
-  | "shipped"
-  | "delivered"
-  | "note"
-  | "cancelled"
-  | "delivery_failed"
-  | "returned"
-  | "inspected"
-  | "carrier_lost"
-  | "cod_collected"
-  | "cod_reversed";
-
-const GENERIC = "That did not work. Please try again.";
-
-type Work = (
-  ctx: Awaited<ReturnType<typeof requireStaffSession>>,
-) => Promise<OrderNotice>;
-
-async function runOrderAction(orderId: string, work: Work): Promise<FormState> {
-  const ctx = await requireStaffSession();
-  let notice: OrderNotice;
-  try {
-    notice = await work(ctx);
-  } catch (error) {
-    if (error instanceof ReauthRequiredError) {
-      redirect(
-        `${routes.adminReauth}?next=${encodeURIComponent(routes.adminOrder(orderId))}`,
-      );
-    }
-    return {
-      status: "error",
-      message: isAppError(error) ? error.message : GENERIC,
-    };
-  }
-  revalidatePath(routes.adminOrder(orderId));
-  revalidatePath(routes.adminOrders);
-  redirect(`${routes.adminOrder(orderId)}?notice=${notice}`);
-}
-
-function orderIdFrom(formData: FormData): string {
-  const parsed = orderIdSchema.safeParse(formData.get("orderId"));
-  if (!parsed.success) redirect(routes.adminOrders);
-  return parsed.data;
-}
 
 export async function startProcessingAction(
   _prev: FormState,

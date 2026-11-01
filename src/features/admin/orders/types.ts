@@ -64,6 +64,12 @@ export interface AdminOrderActions {
   /** COD cash can be recorded (on delivery, or at handover with a reason). */
   readonly codCollect: "delivered" | "handover" | null;
   readonly codReverse: boolean;
+  /** Payment review (docs/admin.md §5.5). */
+  readonly recheck: boolean;
+  readonly attachPayment: boolean;
+  readonly acceptMismatch: boolean;
+  /** Paise still refundable on captured online attempts; 0 hides the form. */
+  readonly refundableInPaise: number;
 }
 
 export interface AdminOrderDetail {
@@ -177,8 +183,16 @@ export function computeActions(
     readonly status: OrderStatus;
     readonly paymentMethod: PaymentMethod;
     readonly payments: ReadonlyArray<{
+      readonly id: string;
       readonly method: PaymentMethod;
       readonly status: PaymentStatus;
+      readonly amountInPaise: number;
+      readonly providerOrderId: string | null;
+    }>;
+    readonly refunds: ReadonlyArray<{
+      readonly paymentId: string;
+      readonly status: string;
+      readonly amountInPaise: number;
     }>;
   },
   role: "STAFF" | "ADMIN",
@@ -191,7 +205,41 @@ export function computeActions(
     (p) => p.method === "COD" && p.status === "CAPTURED",
   );
   const status = row.status;
+  const online = row.paymentMethod === "RAZORPAY";
+  const captured = row.payments.filter(
+    (p) => p.method === "RAZORPAY" && p.status === "CAPTURED",
+  );
+  const refundableInPaise = captured.reduce((sum, attempt) => {
+    const queued = row.refunds
+      .filter((r) => r.paymentId === attempt.id && r.status !== "FAILED")
+      .reduce((total, r) => total + r.amountInPaise, 0);
+    return sum + Math.max(0, attempt.amountInPaise - queued);
+  }, 0);
+  const fulfilled =
+    status === "CONFIRMED" ||
+    status === "PROCESSING" ||
+    status === "SHIPPED" ||
+    status === "DELIVERED";
   return {
+    recheck:
+      online &&
+      row.payments.some(
+        (p) =>
+          p.providerOrderId !== null &&
+          (p.status === "INITIATED" ||
+            p.status === "CREATED" ||
+            p.status === "AUTHORIZED" ||
+            p.status === "FAILED"),
+      ),
+    attachPayment:
+      admin &&
+      online &&
+      captured.length === 0 &&
+      (status === "PENDING_PAYMENT" ||
+        status === "NEEDS_REVIEW" ||
+        status === "CANCELLED"),
+    acceptMismatch: admin && status === "NEEDS_REVIEW" && captured.length > 0,
+    refundableInPaise: admin && online && fulfilled ? refundableInPaise : 0,
     startProcessing: status === "CONFIRMED",
     ship: status === "PROCESSING",
     deliver: status === "SHIPPED",
