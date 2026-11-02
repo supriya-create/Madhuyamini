@@ -1,6 +1,6 @@
 # Phase 8 implementation readiness
 
-Status (2 November 2026): **the design is ready to implement in gated steps once the blocking decisions in the [decision register](phase-8-decision-register.md) are approved.** No Phase 8 application code, schema, migration, dependency or environment change exists. This document records the repository inspection behind that statement, the dependency graph and critical path for the ten steps of [the proposal](phase-8-returns-custom-artwork.md) §13, the risk register (including risks the proposal did not cover), the testing and rollback strategy, the production readiness criteria and the approvals still outstanding.
+Status (2 November 2026): **all 18 decisions in the [decision register](phase-8-decision-register.md) were approved as recommended by the owner, and step 8.0 was authorised; implementation proceeds in the gated steps below.** The assessment that follows was written before the approval and is kept as the record of it. No Phase 8 application code, schema, migration, dependency or environment change exists. This document records the repository inspection behind that statement, the dependency graph and critical path for the ten steps of [the proposal](phase-8-returns-custom-artwork.md) §13, the risk register (including risks the proposal did not cover), the testing and rollback strategy, the production readiness criteria and the approvals still outstanding.
 
 ---
 
@@ -232,7 +232,7 @@ Phase 8 is production-ready when all of the following hold:
 
 ## 8. Outstanding approvals and open items
 
-**Business decisions:** all 18 in the register are pending. Those that gate the start of a step: D8.3 (8.1, only if changed), D8.8 (8.2), D8.4 (8.3), D8.18 (8.5, only if changed), D8.11 (8.6). Everything else can be decided while the preceding steps are built, and must be final before launch where marked.
+**Business decisions:** all 18 in the register were approved as recommended on 2 November 2026, so no step is gated by a decision any more; the values still have to be written into the policy files in their steps and stated on the Phase 9 policy pages before launch.
 
 **Engineering defaults the owner may override (not business decisions):** evidence retention 180 days, commission file retention 365 days, beneficiary retention 30 days; one consolidated sweep job instead of three; an e2e upload stub instead of Cloudinary test credentials in CI.
 
