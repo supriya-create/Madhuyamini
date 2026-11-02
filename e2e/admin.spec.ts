@@ -54,6 +54,30 @@ async function placeCodOrder(page: Page, email: string): Promise<string> {
   return match[0];
 }
 
+/** An online order for two totes, paid through the fake gateway; returns its number. */
+async function placeOnlineOrder(page: Page, email: string): Promise<string> {
+  await page.goto("/products/sample-fish-tote-bag");
+  await page.getByLabel("Quantity", { exact: true }).selectOption("2");
+  await page.getByRole("button", { name: "Add to cart" }).click();
+  await expect(page.getByRole("status")).toContainText("Added to your cart");
+  await page.goto("/checkout");
+  await page.getByLabel("Phone number").fill("9876543210");
+  await fillAddress(page);
+  await expect(page.getByLabel(/Pay online/)).toBeChecked();
+  await page.getByRole("button", { name: "Place order" }).click();
+  await expect(page).toHaveURL(/\/checkout\/pay\/[0-9a-f-]+$/);
+  await page
+    .getByRole("button", { name: "Simulate successful payment" })
+    .click();
+  await expect(page).toHaveURL(/\/checkout\/confirmation\/.*placed=1$/);
+  const heading = await page
+    .getByRole("heading", { level: 2, name: /MY-/ })
+    .textContent();
+  const match = /MY-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{8}/.exec(heading ?? "");
+  if (!match) throw new Error(`no order number for ${email}`);
+  return match[0];
+}
+
 const grantForm = (page: Page) =>
   page.getByRole("region", { name: "Grant access to this customer" });
 
@@ -326,5 +350,91 @@ test.describe("customer data grants", () => {
 
     await adminContext.close();
     await staffContext.close();
+  });
+});
+
+test.describe("refunds", () => {
+  test("a resubmitted refund form queues one refund; the same key with another amount is refused", async ({
+    page,
+    browser,
+  }, testInfo) => {
+    test.slow();
+    const customerEmail = uniqueEmail("refund-customer", testInfo);
+    await register(page, customerEmail);
+    await signIn(page, customerEmail);
+    const orderNumber = await placeOnlineOrder(page, customerEmail);
+
+    const adminEmail = uniqueEmail("refund-admin", testInfo);
+    await createStaffAccount("ADMIN", adminEmail);
+    const adminContext = await browser.newContext({
+      extraHTTPHeaders: { "x-forwarded-for": fakeAddress() },
+    });
+    const admin = await adminContext.newPage();
+    await signInStaff(admin, adminEmail);
+    await admin.goto(`/admin/orders?q=${orderNumber}`);
+    await admin.getByRole("link", { name: orderNumber }).click();
+    await expect(admin.getByRole("heading", { level: 1 })).toContainText(
+      `Order ${orderNumber}`,
+    );
+
+    // The group is a collapsed disclosure on every render: open it first.
+    const refundGroup = admin.locator("details", {
+      has: admin.locator("summary", { hasText: /^Refund$/ }),
+    });
+    const openRefundGroup = async () => {
+      if (!(await refundGroup.evaluate((d) => (d as HTMLDetailsElement).open)))
+        await refundGroup.locator("summary").click();
+    };
+    const refundForm = () =>
+      admin.locator("form", {
+        has: admin.getByRole("button", { name: "Queue the refund" }),
+      });
+    const keyInput = () => refundForm().locator('input[name="operationKey"]');
+    const replayKey = async (value: string) => {
+      await openRefundGroup();
+      await keyInput().evaluate((input, replayed) => {
+        (input as HTMLInputElement).value = replayed;
+      }, value);
+    };
+    const submit = async (amount: string) => {
+      await openRefundGroup();
+      await refundForm().getByLabel("Amount (₹)").fill(amount);
+      await refundForm().getByLabel("Reason").fill("Late delivery.");
+      await refundForm()
+        .getByRole("button", { name: "Queue the refund" })
+        .click();
+    };
+
+    // Each render of the form carries its own key.
+    await openRefundGroup();
+    const key = await keyInput().inputValue();
+    expect(key).toMatch(/^[0-9a-f-]{36}$/);
+    await submit("100");
+    await expect(admin.getByRole("status")).toContainText("Refund queued");
+    await openRefundGroup();
+    expect(await keyInput().inputValue()).not.toBe(key);
+
+    // The browser re-sends the earlier form (a retried request, the back
+    // button): same key, same amount, and nothing new is created.
+    await replayKey(key);
+    await submit("100");
+    await expect(admin.getByRole("status")).toContainText(
+      "nothing new was created",
+    );
+
+    // The earlier form edited to another amount is not the same operation.
+    await replayKey(key);
+    await submit("50");
+    await expect(refundForm().getByRole("alert")).toContainText(
+      "already used for a different refund",
+    );
+
+    await admin.goto("/admin/payments/refunds");
+    await expect(
+      admin.getByText(`${orderNumber}-R1`, { exact: true }),
+    ).toBeVisible();
+    await expect(admin.getByText(`${orderNumber}-R1-2`)).toHaveCount(0);
+    await expectNoAxeViolations(admin, "refunds");
+    await adminContext.close();
   });
 });

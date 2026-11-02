@@ -31,6 +31,8 @@ const ALLOWED: Readonly<Record<string, readonly string[]>> = {
     "providerCurrency",
     "captureOutcome",
     "refundReference",
+    "refundStatus",
+    "reused",
   ],
   order_item: ["id", "sku", "quantity", "restockQty", "writeOffQty"],
   shipment: [

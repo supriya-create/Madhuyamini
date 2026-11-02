@@ -722,6 +722,8 @@ model Refund {
   /// Sent to the provider as `receipt` and in notes, so an unanswered request can be found again.
   reference        String       @unique
   providerRefundId String?      @unique @map("provider_refund_id")
+  /// The admin operation that created it (docs/admin.md §5.5): one refund per submitted form, unique. Null for automatic refunds.
+  operationKey     String?      @unique @map("operation_key") @db.Uuid
   attempts         Int          @default(0)
   nextAttemptAt    DateTime     @default(now()) @map("next_attempt_at")
   claimedAt        DateTime?    @map("claimed_at")

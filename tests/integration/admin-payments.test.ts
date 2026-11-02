@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import {
@@ -329,35 +331,41 @@ describe("refunds (ADMIN, re-auth)", () => {
     await expect(
       createRefund(staff.ctx, placed.orderId, {
         amountInPaise: 500,
+        operationKey: randomUUID(),
         reason: "Goodwill.",
       }),
     ).rejects.toBeInstanceOf(ForbiddenCapabilityError);
     await expect(
       createRefund(admin.ctx, placed.orderId, {
         amountInPaise: placed.totalInPaise + 1,
+        operationKey: randomUUID(),
         reason: "Too much.",
       }),
     ).rejects.toMatchObject({ code: "AMOUNT_EXCEEDS_REFUNDABLE" });
     await expect(
       createRefund(admin.ctx, placed.orderId, {
         amountInPaise: 0,
+        operationKey: randomUUID(),
         reason: "Nothing.",
       }),
     ).rejects.toMatchObject({ code: "INVALID_AMOUNT" });
 
     const first = await createRefund(admin.ctx, placed.orderId, {
       amountInPaise: 500,
+      operationKey: randomUUID(),
       reason: "Goodwill for the delay.",
     });
     expect(first.reference).toBe(`${placed.orderNumber}-R1`);
     const second = await createRefund(admin.ctx, placed.orderId, {
       amountInPaise: placed.totalInPaise - 500,
+      operationKey: randomUUID(),
       reason: "Rest of it.",
     });
     expect(second.reference).toBe(`${placed.orderNumber}-R1-2`);
     await expect(
       createRefund(admin.ctx, placed.orderId, {
         amountInPaise: 1,
+        operationKey: randomUUID(),
         reason: "One more.",
       }),
     ).rejects.toMatchObject({ code: "NOTHING_TO_REFUND" });
@@ -393,6 +401,7 @@ describe("refunds (ADMIN, re-auth)", () => {
     const placed = await confirmedOnlineOrder({ sku: "RF-2" });
     const { reference } = await createRefund(admin.ctx, placed.orderId, {
       amountInPaise: 1000,
+      operationKey: randomUUID(),
       reason: "Goodwill.",
     });
     const refund = await testDb.refund.findUniqueOrThrow({
@@ -436,6 +445,7 @@ describe("refunds (ADMIN, re-auth)", () => {
     const placed = await confirmedOnlineOrder({ sku: "RF-3" });
     const { reference } = await createRefund(admin.ctx, placed.orderId, {
       amountInPaise: 2000,
+      operationKey: randomUUID(),
       reason: "Goodwill.",
     });
     const refund = await testDb.refund.findUniqueOrThrow({
@@ -498,6 +508,7 @@ describe("refund regressions", () => {
     const placed = await confirmedOnlineOrder({ sku: "RG-1" });
     const { reference } = await createRefund(admin.ctx, placed.orderId, {
       amountInPaise: 1000,
+      operationKey: randomUUID(),
       reason: "Goodwill.",
     });
     await testDb.refund.update({
@@ -530,17 +541,268 @@ describe("refund regressions", () => {
     for (let i = 0; i < 20; i += 1) {
       await createRefund(admin.ctx, placed.orderId, {
         amountInPaise: 1,
+        operationKey: randomUUID(),
         reason: `Paise ${i}.`,
       });
     }
     await expect(
       createRefund(admin.ctx, placed.orderId, {
         amountInPaise: 1,
+        operationKey: randomUUID(),
         reason: "Too many.",
       }),
     ).rejects.toMatchObject({ code: "ADMIN_RATE_LIMITED" });
     expect(
       await testDb.refund.count({ where: { orderId: placed.orderId } }),
     ).toBe(20);
+  });
+});
+
+describe("refund idempotency (docs/admin.md §18.5)", () => {
+  const refundsAtProvider = (placed: { providerPaymentId?: string }) => {
+    if (!placed.providerPaymentId) throw new Error("no provider payment");
+    return gateway.listRefunds(placed.providerPaymentId);
+  };
+  const refundsOf = (orderId: string) =>
+    testDb.refund.findMany({
+      where: { orderId },
+      orderBy: { createdAt: "asc" },
+    });
+
+  it("a double click queues one refund: concurrent submissions with one key return the same reference", async () => {
+    const admin = await verifiedStaff("ADMIN");
+    const placed = await confirmedOnlineOrder({ sku: "RI-1" });
+    const operationKey = randomUUID();
+    const input = { amountInPaise: 700, reason: "Double click.", operationKey };
+    const results = await Promise.all([
+      createRefund(admin.ctx, placed.orderId, input),
+      createRefund(admin.ctx, placed.orderId, input),
+      createRefund(admin.ctx, placed.orderId, input),
+    ]);
+    expect(new Set(results.map((r) => r.reference)).size).toBe(1);
+    expect(results.filter((r) => r.reused)).toHaveLength(2);
+    const refunds = await refundsOf(placed.orderId);
+    expect(refunds).toHaveLength(1);
+    expect(refunds[0]).toMatchObject({
+      operationKey,
+      amountInPaise: 700,
+      status: "INITIATED",
+    });
+    const snap = await orderSnapshot(placed.orderId);
+    expect(
+      snap.outboxKinds.filter((k) => k === "order.refund_requested"),
+    ).toHaveLength(1);
+    const audits = await auditOf("refund.create");
+    expect(audits.map((a) => a.outcome)).toEqual([
+      "SUCCESS",
+      "SUCCESS",
+      "SUCCESS",
+    ]);
+    expect(
+      audits.filter((a) => JSON.stringify(a.after).includes('"reused":true')),
+    ).toHaveLength(2);
+  });
+
+  it("a retried or repeated request returns the existing refund; the key with another amount or order is refused", async () => {
+    const admin = await verifiedStaff("ADMIN");
+    const placed = await confirmedOnlineOrder({ sku: "RI-2" });
+    const operationKey = randomUUID();
+    const input = { amountInPaise: 500, reason: "Goodwill.", operationKey };
+    const first = await createRefund(admin.ctx, placed.orderId, input);
+    expect(first.reused).toBe(false);
+    // The network retried the POST after the response was lost.
+    expect(await createRefund(admin.ctx, placed.orderId, input)).toEqual({
+      reference: first.reference,
+      reused: true,
+    });
+    // Repeated much later, once the job has processed it.
+    await runRefundPayments();
+    expect(await createRefund(admin.ctx, placed.orderId, input)).toEqual({
+      reference: first.reference,
+      reused: true,
+    });
+    // The same form resubmitted with an edited amount is not the same operation.
+    await expect(
+      createRefund(admin.ctx, placed.orderId, { ...input, amountInPaise: 600 }),
+    ).rejects.toMatchObject({ code: "REFUND_KEY_CONFLICT" });
+    // Nor is a key spent on another order.
+    const other = await confirmedOnlineOrder({ sku: "RI-2B" });
+    await expect(
+      createRefund(admin.ctx, other.orderId, input),
+    ).rejects.toMatchObject({
+      code: "REFUND_KEY_CONFLICT",
+    });
+    expect(await testDb.refund.count()).toBe(1);
+  });
+
+  it("the database refuses two refunds with one operation key", async () => {
+    const placed = await confirmedOnlineOrder({ sku: "RI-3" });
+    const data = {
+      orderId: placed.orderId,
+      paymentId: placed.attemptId,
+      amountInPaise: 1,
+      reason: "shop_refund",
+      operationKey: randomUUID(),
+    };
+    await testDb.refund.create({
+      data: { ...data, reference: `${placed.orderNumber}-X1` },
+    });
+    await expect(
+      testDb.refund.create({
+        data: { ...data, reference: `${placed.orderNumber}-X2` },
+      }),
+    ).rejects.toMatchObject({ code: "P2002" });
+  });
+
+  it("concurrent refunds with different keys never add up to more than was captured", async () => {
+    const admin = await verifiedStaff("ADMIN");
+    const placed = await confirmedOnlineOrder({ sku: "RI-4" });
+    const share = Math.ceil(placed.totalInPaise * 0.6);
+    const results = await Promise.allSettled(
+      [1, 2, 3].map((n) =>
+        createRefund(admin.ctx, placed.orderId, {
+          amountInPaise: share,
+          reason: `Share ${n}.`,
+          operationKey: randomUUID(),
+        }),
+      ),
+    );
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    for (const r of results) {
+      if (r.status === "rejected") {
+        expect(r.reason).toMatchObject({ code: "AMOUNT_EXCEEDS_REFUNDABLE" });
+      }
+    }
+    const queued = await testDb.refund.aggregate({
+      where: { orderId: placed.orderId, status: { not: "FAILED" } },
+      _sum: { amountInPaise: true },
+    });
+    expect(queued._sum.amountInPaise).toBe(share);
+    expect(
+      (await auditOf("refund.create")).map((a) => a.outcome).sort(),
+    ).toEqual(["FAILED", "FAILED", "SUCCESS"]);
+  });
+
+  it("several partial refunds are fine until they reach the captured amount; the payment settles only then", async () => {
+    const admin = await verifiedStaff("ADMIN");
+    const placed = await confirmedOnlineOrder({ sku: "RI-5" });
+    const total = placed.totalInPaise;
+    const third = Math.floor(total / 3);
+    const parts = [third, third, total - 2 * third];
+    const queue = (amount: number, n: number) =>
+      createRefund(admin.ctx, placed.orderId, {
+        amountInPaise: amount,
+        reason: `Part ${n}.`,
+        operationKey: randomUUID(),
+      });
+    const first = await queue(parts[0] ?? 0, 1);
+    const second = await queue(parts[1] ?? 0, 2);
+    await runRefundPayments();
+    let snap = await orderSnapshot(placed.orderId);
+    expect(snap.order.refunds.map((r) => r.status)).toEqual([
+      "PROCESSED",
+      "PROCESSED",
+    ]);
+    expect(snap.order.payments[0]?.status).toBe("CAPTURED");
+
+    const last = await queue(parts[2] ?? 0, 3);
+    expect([first.reference, second.reference, last.reference]).toEqual([
+      `${placed.orderNumber}-R1`,
+      `${placed.orderNumber}-R1-2`,
+      `${placed.orderNumber}-R1-3`,
+    ]);
+    await expect(queue(1, 4)).rejects.toMatchObject({
+      code: "NOTHING_TO_REFUND",
+    });
+    await runRefundPayments();
+    snap = await orderSnapshot(placed.orderId);
+    expect(snap.order.refunds.map((r) => r.status)).toEqual([
+      "PROCESSED",
+      "PROCESSED",
+      "PROCESSED",
+    ]);
+    expect(snap.order.payments[0]?.status).toBe("REFUNDED");
+    const atProvider = await refundsAtProvider(placed);
+    expect(atProvider.reduce((sum, r) => sum + r.amountInPaise, 0)).toBe(total);
+    expect(atProvider.map((r) => r.reference).sort()).toEqual(
+      [first.reference, second.reference, last.reference].sort(),
+    );
+  });
+
+  it("a failed refund frees its amount, and its retry must still fit what is left", async () => {
+    const admin = await verifiedStaff("ADMIN");
+    const placed = await confirmedOnlineOrder({ sku: "RI-6" });
+    const big = Math.ceil(placed.totalInPaise * 0.6);
+    gateway.failNext("createRefund", { retryable: false });
+    const first = await createRefund(admin.ctx, placed.orderId, {
+      amountInPaise: big,
+      reason: "First.",
+      operationKey: randomUUID(),
+    });
+    await runRefundPayments();
+    const failed = await testDb.refund.findUniqueOrThrow({
+      where: { reference: first.reference },
+    });
+    expect(failed.status).toBe("FAILED");
+
+    const second = await createRefund(admin.ctx, placed.orderId, {
+      amountInPaise: big,
+      reason: "Second.",
+      operationKey: randomUUID(),
+    });
+    expect(second.reference).toBe(`${placed.orderNumber}-R1-2`);
+    await expect(
+      retryRefund(admin.ctx, failed.id, "Try again."),
+    ).rejects.toMatchObject({
+      code: "AMOUNT_EXCEEDS_REFUNDABLE",
+    });
+    expect(
+      (await testDb.refund.findUniqueOrThrow({ where: { id: failed.id } }))
+        .status,
+    ).toBe("FAILED");
+    const [audit] = await auditOf("refund.retry");
+    expect(audit).toMatchObject({
+      outcome: "FAILED",
+      errorCode: "AMOUNT_EXCEEDS_REFUNDABLE",
+    });
+    await runRefundPayments();
+    expect(
+      (await refundsAtProvider(placed)).reduce(
+        (sum, r) => sum + r.amountInPaise,
+        0,
+      ),
+    ).toBe(big);
+  });
+
+  it("a retry after a lost response reuses the original reference and never refunds twice", async () => {
+    const admin = await verifiedStaff("ADMIN");
+    const placed = await confirmedOnlineOrder({ sku: "RI-7" });
+    // The provider refunded, but its answer never reached us.
+    gateway.failNext("createRefund", { retryable: false, afterEffect: true });
+    const { reference } = await createRefund(admin.ctx, placed.orderId, {
+      amountInPaise: 900,
+      reason: "Lost response.",
+      operationKey: randomUUID(),
+    });
+    await runRefundPayments();
+    const failed = await testDb.refund.findUniqueOrThrow({
+      where: { reference },
+    });
+    expect(failed.status).toBe("FAILED");
+    expect(await refundsAtProvider(placed)).toHaveLength(1);
+
+    await retryRefund(admin.ctx, failed.id, "Checking with the provider.");
+    await runRefundPayments();
+    const done = await testDb.refund.findUniqueOrThrow({
+      where: { id: failed.id },
+    });
+    expect(done.status).toBe("PROCESSED");
+    const atProvider = await refundsAtProvider(placed);
+    expect(atProvider).toHaveLength(1);
+    expect(atProvider[0]).toMatchObject({
+      reference,
+      providerRefundId: done.providerRefundId,
+    });
+    expect(await refundsOf(placed.orderId)).toHaveLength(1);
   });
 });

@@ -50,6 +50,8 @@ export const createRefundSchema = z
         return paise;
       }),
     reason,
+    /** Rendered into the form; one refund per form (docs/admin.md §5.5). */
+    operationKey: z.uuid(),
   })
   .strict();
 

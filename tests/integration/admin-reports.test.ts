@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { ForbiddenCapabilityError } from "@/features/admin/authz";
@@ -90,6 +92,7 @@ describe("sales and products", () => {
 
     await createRefund(admin.ctx, paid.orderId, {
       amountInPaise: 10_000,
+      operationKey: randomUUID(),
       reason: "Goodwill.",
     });
     await runRefundPayments();

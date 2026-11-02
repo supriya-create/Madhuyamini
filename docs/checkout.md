@@ -195,6 +195,8 @@ model Refund {
   /// Sent to Razorpay as `receipt` and `notes.refundId`, so an unanswered request can be found again.
   reference         String       @unique
   providerRefundId  String?      @unique @map("provider_refund_id")
+  /// Phase 7: the admin operation that created it, unique (docs/admin.md §5.5); null for automatic refunds.
+  operationKey      String?      @unique @map("operation_key") @db.Uuid
   attempts          Int          @default(0)
   nextAttemptAt     DateTime     @default(now()) @map("next_attempt_at")
   claimedAt         DateTime?    @map("claimed_at")
@@ -501,6 +503,8 @@ The **cart is the idempotency key** for placement: every checkout submission is 
 | "Try again" clicked twice on the pay page                       | `payments_one_open_per_order` makes the second insert fail; the action returns the open attempt's provider order id.                                                                                                                                   |
 | Callback replayed, webhook duplicated, both arrive              | T5 is a no-op once `CONFIRMED`; the ledger stores one row per event id.                                                                                                                                                                                |
 | The same browser places an order, signs in, and merges the cart | A cart with a live order is not merged into: the Phase 5 merge (which already requires `status = 'ACTIVE'`) additionally skips carts with a live order and leaves the guest cart for the pending order; the customer sees it under "awaiting payment". |
+
+**Admin refunds (Phase 7, docs/admin.md §5.5)** follow the same pattern with an explicit key: every refund form carries an `operationKey` that is stored on the `refunds` row and unique in the database; the operation is resolved under the order lock, so a repeated submission returns the refund it created and concurrent refunds are checked against the captured amount one at a time.
 
 ### 5.8 Recovery jobs and concurrent workers
 

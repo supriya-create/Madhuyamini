@@ -86,15 +86,16 @@ export async function createRefundAction(
   const orderId = orderIdFrom(formData);
   const parsed = parseForm(
     createRefundSchema,
-    pickFormValues(formData, ["orderId", "amount", "reason"]),
+    pickFormValues(formData, ["orderId", "amount", "reason", "operationKey"]),
   );
   if (!parsed.ok) return parsed.state;
   return runOrderAction(orderId, async (ctx) => {
-    await createRefund(ctx, orderId, {
+    const { reused } = await createRefund(ctx, orderId, {
       amountInPaise: parsed.data.amount,
       reason: parsed.data.reason,
+      operationKey: parsed.data.operationKey,
     });
-    return "refund_queued";
+    return reused ? "refund_exists" : "refund_queued";
   });
 }
 

@@ -36,6 +36,11 @@ export interface RefundIntentInput {
   readonly reason: RefundReason;
   /** Distinguishes several refunds of one attempt (partial refunds). */
   readonly sequence?: number;
+  /**
+   * The admin operation behind the refund (docs/admin.md §5.5): unique in
+   * the database, so a repeated submission can find the refund it created.
+   */
+  readonly operationKey?: string;
 }
 
 export async function queueRefundIntent(
@@ -54,6 +59,7 @@ export async function queueRefundIntent(
         amountInPaise: input.amountInPaise,
         reason: input.reason,
         reference,
+        operationKey: input.operationKey ?? null,
       },
     ],
     skipDuplicates: true,

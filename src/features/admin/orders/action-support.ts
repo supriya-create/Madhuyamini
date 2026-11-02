@@ -33,7 +33,8 @@ export type OrderNotice =
   | "rechecked"
   | "attached"
   | "accepted"
-  | "refund_queued";
+  | "refund_queued"
+  | "refund_exists";
 
 export const ORDER_NOTICES: Readonly<Record<OrderNotice, string>> = {
   processing: "The order is marked as being prepared.",
@@ -53,6 +54,8 @@ export const ORDER_NOTICES: Readonly<Record<OrderNotice, string>> = {
   accepted: "Payment accepted and the order confirmed.",
   refund_queued:
     "Refund queued; the refund job will request it from the provider.",
+  refund_exists:
+    "That refund was already queued from this form; nothing new was created.",
 };
 
 const GENERIC = "That did not work. Please try again.";

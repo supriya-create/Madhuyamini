@@ -415,12 +415,26 @@ const REFUNDABLE_STATUSES = [
   "DELIVERED",
 ] as const;
 
+/**
+ * Queues a refund for the order's captured payment (docs/admin.md §5.5).
+ * Idempotent per `operationKey`: the key is generated when the form is
+ * rendered and stored on the refund, unique in the database, so a double
+ * click, a retried request or a resubmitted form returns the refund it
+ * already created (`reused`) instead of queueing another. The order lock
+ * serialises every refund of an order, and the refundable balance is read
+ * under it, so concurrent refunds can never add up to more than was
+ * captured.
+ */
 export async function createRefund(
   ctx: StaffContext,
   orderId: string,
-  input: { readonly amountInPaise: number; readonly reason: string },
+  input: {
+    readonly amountInPaise: number;
+    readonly reason: string;
+    readonly operationKey: string;
+  },
   now = new Date(),
-): Promise<{ reference: string }> {
+): Promise<{ reference: string; reused: boolean }> {
   await enforceActorLimit(
     ctx,
     "refund",
@@ -431,7 +445,7 @@ export async function createRefund(
       targetId: orderId,
     },
   );
-  return runAudited(
+  return runAudited<{ reference: string; reused: boolean }>(
     {
       ctx,
       action: "refund.create",
@@ -454,6 +468,40 @@ export async function createRefund(
         },
       });
       if (!order) throw new NotFoundError("Order");
+      // The same operation again: hand back the refund it created, whatever
+      // the order has moved on to since.
+      const existing = await tx.refund.findUnique({
+        where: { operationKey: input.operationKey },
+        select: {
+          orderId: true,
+          amountInPaise: true,
+          reference: true,
+          status: true,
+        },
+      });
+      if (existing) {
+        if (
+          existing.orderId !== orderId ||
+          existing.amountInPaise !== input.amountInPaise
+        ) {
+          throw new PaymentReviewError(
+            "This form was already used for a different refund. Reload the order and try again.",
+            "REFUND_KEY_CONFLICT",
+          );
+        }
+        return {
+          result: { reference: existing.reference, reused: true },
+          after: {
+            id: order.id,
+            orderNumber: order.orderNumber,
+            status: order.status,
+            amountInPaise: existing.amountInPaise,
+            refundReference: existing.reference,
+            refundStatus: existing.status,
+            reused: true,
+          },
+        };
+      }
       if (order.paymentMethod !== "RAZORPAY") {
         throw new PaymentReviewError(
           "Cash-on-delivery orders are refunded by hand, not here.",
@@ -497,21 +545,25 @@ export async function createRefund(
         actor: actorOf(ctx),
         reason: "shop_refund",
         sequence: attempt.refundCount + 1,
+        operationKey: input.operationKey,
       });
       if (!created) {
+        // The order lock rules out a race on this order, so a skipped insert
+        // means the key was spent elsewhere (or the reference exists).
         throw new PaymentReviewError(
           "A refund with that reference already exists.",
           "DUPLICATE_REFUND",
         );
       }
       return {
-        result: { reference },
+        result: { reference, reused: false },
         after: {
           id: order.id,
           orderNumber: order.orderNumber,
           status: order.status,
           amountInPaise: input.amountInPaise,
           refundReference: reference,
+          reused: false,
         },
       };
     },
@@ -540,6 +592,7 @@ export async function retryRefund(
         select: {
           id: true,
           orderId: true,
+          paymentId: true,
           status: true,
           amountInPaise: true,
           reason: true,
@@ -551,6 +604,22 @@ export async function retryRefund(
       });
       if (!refund) throw new NotFoundError("Refund");
       await orders.lockOrder(tx, refund.orderId);
+      if (refund.status === "FAILED") {
+        // Other refunds may have used the balance since this one failed: a
+        // retry keeps its reference but must still fit what is left.
+        const attempt = (await refundableAttempts(tx, refund.orderId)).find(
+          (candidate) => candidate.id === refund.paymentId,
+        );
+        const remaining = attempt
+          ? attempt.amountInPaise - attempt.refundedInPaise
+          : 0;
+        if (refund.amountInPaise > remaining) {
+          throw new PaymentReviewError(
+            `Retrying would refund more than is left on this payment (${remaining} paise). Queue a smaller refund instead.`,
+            "AMOUNT_EXCEEDS_REFUNDABLE",
+          );
+        }
+      }
       const reset = await tx.refund.updateMany({
         where: { id: refundId, status: "FAILED" },
         data: {

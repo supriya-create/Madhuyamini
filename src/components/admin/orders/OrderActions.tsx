@@ -390,7 +390,9 @@ export function OrderActions({ order }: { order: AdminOrderDetail }) {
       body: (
         <AdminActionForm
           action={createRefundAction}
-          hidden={hidden}
+          // One refund per rendered form: a double click or a retried
+          // request finds the refund this key created (docs/admin.md §5.5).
+          hidden={{ ...hidden, operationKey: crypto.randomUUID() }}
           submitLabel="Queue the refund"
           variant="secondary"
         >
