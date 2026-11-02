@@ -4,19 +4,19 @@ Status: **Phases 1–7 implemented (1 Nov 2026); Phase 8 approved on 2 Nov 2026 
 
 Related: [architecture.md](architecture.md) · [design-system.md](design-system.md). Decision IDs (D1–D9) refer to architecture.md §7.
 
-| #   | Phase                                       | Status                                                                                                        | Decisions needed first         |
-| --- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| 1   | Project setup and homepage foundation       | **Implemented; open items**                                                                                   | D2 (D1 decided)                |
-| 2   | Database and backend foundation             | **Implemented; open items**                                                                                   | D4 (deferred to 11)            |
-| 3   | Product catalog                             | **Implemented; open items**                                                                                   | D2 (imagery)                   |
-| 4   | Authentication and customer accounts        | **Implemented** ([auth.md](auth.md))                                                                          | decided (D3, D5, P1–P5)        |
-| 5   | Cart and wishlist                           | **Implemented** ([cart.md](cart.md))                                                                          | decided (C1–C6)                |
-| 6   | Checkout and payments (Razorpay + COD)      | **Implemented** ([checkout.md](checkout.md))                                                                  | decided (D6, D7a–c, P6–P12)    |
-| 7   | Admin dashboard                             | **Implemented** ([admin.md](admin.md))                                                                        | A1–A13                         |
-| 8   | Returns, exchanges and custom artwork       | **Approved; in progress (8.0 done)** ([phase-8-returns-custom-artwork.md](phase-8-returns-custom-artwork.md)) | D8.1–D8.18 approved 2 Nov 2026 |
-| 9   | Brand experience and content                | Not started                                                                                                   | D2                             |
-| 10  | Testing, security and performance hardening | Not started                                                                                                   | D8, D9                         |
-| 11  | Production deployment                       | Not started                                                                                                   | none                           |
+| #   | Phase                                       | Status                                                                                                             | Decisions needed first         |
+| --- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------ |
+| 1   | Project setup and homepage foundation       | **Implemented; open items**                                                                                        | D2 (D1 decided)                |
+| 2   | Database and backend foundation             | **Implemented; open items**                                                                                        | D4 (deferred to 11)            |
+| 3   | Product catalog                             | **Implemented; open items**                                                                                        | D2 (imagery)                   |
+| 4   | Authentication and customer accounts        | **Implemented** ([auth.md](auth.md))                                                                               | decided (D3, D5, P1–P5)        |
+| 5   | Cart and wishlist                           | **Implemented** ([cart.md](cart.md))                                                                               | decided (C1–C6)                |
+| 6   | Checkout and payments (Razorpay + COD)      | **Implemented** ([checkout.md](checkout.md))                                                                       | decided (D6, D7a–c, P6–P12)    |
+| 7   | Admin dashboard                             | **Implemented** ([admin.md](admin.md))                                                                             | A1–A13                         |
+| 8   | Returns, exchanges and custom artwork       | **Approved; in progress (8.0, 8.1 done)** ([phase-8-returns-custom-artwork.md](phase-8-returns-custom-artwork.md)) | D8.1–D8.18 approved 2 Nov 2026 |
+| 9   | Brand experience and content                | Not started                                                                                                        | D2                             |
+| 10  | Testing, security and performance hardening | Not started                                                                                                        | D8, D9                         |
+| 11  | Production deployment                       | Not started                                                                                                        | none                           |
 
 ### Sequencing notes
 
@@ -413,7 +413,7 @@ Fixes made because tests caught them: a `"use server"` module may export only as
 
 ## Phase 8 — Returns, exchanges and custom artwork
 
-Status: **approved on 2 Nov 2026; implementation in progress. Step 8.0 (placement entry point and foundation migration) landed on 2 Nov 2026; steps 8.1 and 8.5 are next; nothing customer-facing is live yet.** The design is [phase-8-returns-custom-artwork.md](phase-8-returns-custom-artwork.md): customer returns and exchanges for delivered orders, item-level refunds on the Phase 6 refund worker and the Phase 7 refund operation keys, and a quotation-based custom artwork workflow, with a decision register (D8.1–D8.18) that needs the owner's answers before the gated steps start. The readiness review of 2 Nov 2026 is in [phase-8-decision-register.md](phase-8-decision-register.md) (all 18 decisions pending owner approval) and [phase-8-implementation-readiness.md](phase-8-implementation-readiness.md) (dependency graph, risks, rollback, production criteria). Coupons and verified-purchase reviews, listed under "advanced commerce" in the table below, are deferred to a later proposal; shipments and tracking already shipped in Phase 7.
+Status: **approved on 2 Nov 2026; implementation in progress. Steps 8.0 (placement entry point) and 8.1 (returns foundation: requests, review, inspection, private evidence files) landed on 2 Nov 2026; 8.2 (refunds) and 8.5 (commissions) are next; no money moves through returns yet.** The design is [phase-8-returns-custom-artwork.md](phase-8-returns-custom-artwork.md): customer returns and exchanges for delivered orders, item-level refunds on the Phase 6 refund worker and the Phase 7 refund operation keys, and a quotation-based custom artwork workflow, with a decision register (D8.1–D8.18) that needs the owner's answers before the gated steps start. The readiness review of 2 Nov 2026 is in [phase-8-decision-register.md](phase-8-decision-register.md) (all 18 decisions pending owner approval) and [phase-8-implementation-readiness.md](phase-8-implementation-readiness.md) (dependency graph, risks, rollback, production criteria). Coupons and verified-purchase reviews, listed under "advanced commerce" in the table below, are deferred to a later proposal; shipments and tracking already shipped in Phase 7.
 
 ---
 

@@ -125,6 +125,7 @@ const timelineLabels: Readonly<Record<string, string>> = {
   "order.delivery_failed": "Delivery was unsuccessful; parcel returning to us",
   "order.returned": "Parcel received back",
   "payment.cod_collected": "Cash collected on delivery",
+  "return.requested": "Return requested",
 };
 
 export function maskEmail(email: string): string {

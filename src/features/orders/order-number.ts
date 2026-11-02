@@ -11,12 +11,22 @@ const PREFIX = "MY-";
 const ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 const LENGTH = 8;
 
-export function generateOrderNumber(): string {
+/** `prefix` plus eight characters of the alphabet; other series (returns) reuse it. */
+export function generateReference(prefix: string): string {
   let body = "";
   for (let i = 0; i < LENGTH; i += 1) {
     body += ALPHABET[randomInt(ALPHABET.length)];
   }
-  return PREFIX + body;
+  return prefix + body;
+}
+
+export function generateOrderNumber(): string {
+  return generateReference(PREFIX);
+}
+
+/** The pattern a reference with `prefix` must match (upper case, no ambiguous letters). */
+export function referencePattern(prefix: string): RegExp {
+  return new RegExp(`^${prefix}[${ALPHABET}]{${LENGTH}}$`);
 }
 
 const ORDER_NUMBER_PATTERN = new RegExp(`^${PREFIX}[${ALPHABET}]{${LENGTH}}$`);

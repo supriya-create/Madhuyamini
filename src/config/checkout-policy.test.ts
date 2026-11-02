@@ -84,6 +84,7 @@ describe("checkout policy", () => {
     const roots = [
       "src/features/checkout",
       "src/features/orders",
+      "src/features/returns",
       "src/features/payments",
       "src/features/inventory",
       "src/server/jobs",

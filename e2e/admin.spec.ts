@@ -1,18 +1,15 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
-import {
-  PASSWORD,
-  fakeAddress,
-  register,
-  signIn,
-  uniqueEmail,
-} from "./accounts";
+import { fakeAddress, register, signIn, uniqueEmail } from "./accounts";
+import { fillAddress, placeCodOrder } from "./orders";
 import {
   ageVerification,
   codeFor,
   createStaffAccount,
   enrolTwoFactor,
+  signInForAdmin,
+  signInStaff,
 } from "./staff";
 import { expectNoAxeViolations } from "./support";
 
@@ -26,33 +23,6 @@ import { expectNoAxeViolations } from "./support";
 test.beforeEach(async ({ context }) => {
   await context.setExtraHTTPHeaders({ "x-forwarded-for": fakeAddress() });
 });
-
-async function fillAddress(page: Page) {
-  await page.getByLabel("Recipient’s name").fill("Asha Devi");
-  await page.getByLabel("Address", { exact: true }).fill("12 Station Road");
-  await page.getByLabel("City").fill("Madhubani");
-  await page.getByLabel("State").fill("Bihar");
-  await page.getByLabel("PIN code").fill("847211");
-}
-
-/** A cash-on-delivery order for the tote, placed by a signed-in customer; returns its number. */
-async function placeCodOrder(page: Page, email: string): Promise<string> {
-  await page.goto("/products/sample-fish-tote-bag");
-  await page.getByRole("button", { name: "Add to cart" }).click();
-  await expect(page.getByRole("status")).toContainText("Added to your cart");
-  await page.goto("/checkout");
-  await page.getByLabel("Phone number").fill("9876543210");
-  await fillAddress(page);
-  await page.getByLabel(/Cash on delivery/).check();
-  await page.getByRole("button", { name: "Place order" }).click();
-  await expect(page).toHaveURL(/\/checkout\/confirmation\//);
-  const heading = await page
-    .getByRole("heading", { level: 2, name: /MY-/ })
-    .textContent();
-  const match = /MY-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{8}/.exec(heading ?? "");
-  if (!match) throw new Error(`no order number for ${email}`);
-  return match[0];
-}
 
 /** An online order for two totes, paid through the fake gateway; returns its number. */
 async function placeOnlineOrder(page: Page, email: string): Promise<string> {
@@ -81,39 +51,11 @@ async function placeOnlineOrder(page: Page, email: string): Promise<string> {
 const grantForm = (page: Page) =>
   page.getByRole("region", { name: "Grant access to this customer" });
 
-/** Signs in with /admin as the return path, so enrolment lands there. */
-async function signInForAdmin(page: Page, email: string): Promise<void> {
-  await page.goto("/login?next=%2Fadmin");
-  await page.getByLabel("Email address").fill(email);
-  await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
-  await page.getByRole("button", { name: "Sign in" }).click();
-}
-
-async function signInStaff(page: Page, email: string): Promise<string> {
-  await signInForAdmin(page, email);
-  await expect(page).toHaveURL(/\/account\/security\/two-factor/);
-  await page.getByLabel("Current password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Start setup" }).click();
-  const key = await page.getByLabel("Setup key").textContent();
-  if (!key) throw new Error("no setup key");
-  await page.getByLabel("Six-digit code from the app").fill(codeFor(key));
-  await page
-    .getByRole("button", { name: "Turn on two-factor sign-in" })
-    .click();
-  await expect(page.getByRole("status")).toContainText(
-    "Two-factor sign-in is on",
-  );
-  await page
-    .getByRole("link", { name: "I have saved my recovery codes" })
-    .click();
-  await expect(page).toHaveURL(/\/admin/);
-  return key;
-}
-
 test.describe("the staff gate", () => {
   test("hides the admin from customers and visitors, and enrols staff before anything else", async ({
     page,
   }, testInfo) => {
+    test.slow();
     await page.goto("/admin");
     await expect(page).toHaveURL(/\/login\?next=%2Fadmin/);
 

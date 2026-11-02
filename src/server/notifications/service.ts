@@ -13,8 +13,10 @@ import {
   orderDeliveryFailedMessage,
   orderShippedMessage,
   ownerNewOrderMessage,
+  ownerReturnRequestedMessage,
   recoveryCodeUsedMessage,
   refundRequestedMessage,
+  returnUpdateMessage,
 } from "@/server/email/templates";
 import type {
   CancellationEmailReason,
@@ -189,6 +191,129 @@ export async function renderNotification(
           field(row.payload, "title") ??
           "Attention needed",
         details,
+      });
+    }
+    case "return.requested":
+    case "return.info_requested":
+    case "return.approved":
+    case "return.rejected":
+    case "return.received":
+    case "return.inspected":
+    case "return.expired":
+    case "return.withdrawn": {
+      const requestNumber = field(row.payload, "requestNumber");
+      const orderNumber = field(row.payload, "orderNumber");
+      if (!requestNumber || !orderNumber)
+        throw new NotificationRenderError("return payload incomplete");
+      const returnUrl = absolute(routes.accountReturn(requestNumber));
+      const common = {
+        to: row.recipient,
+        requestNumber,
+        orderNumber,
+        returnUrl,
+      };
+      switch (row.kind) {
+        case "return.requested":
+          return returnUpdateMessage({
+            ...common,
+            subject: `We have your return request ${requestNumber}`,
+            paragraphs: [
+              `We will review it and reply within a few days. Nothing needs to be sent yet; wait for our instructions.`,
+            ],
+          });
+        case "return.info_requested":
+          return returnUpdateMessage({
+            ...common,
+            subject: `A question about your return ${requestNumber}`,
+            paragraphs: [
+              "We need a little more information before we can decide. Please read our question on the return page and reply there.",
+            ],
+          });
+        case "return.approved": {
+          const instructions = field(row.payload, "instructions") ?? "";
+          const shipBy = field(row.payload, "shipByAt");
+          const payer = field(row.payload, "payer");
+          return returnUpdateMessage({
+            ...common,
+            subject: `Your return ${requestNumber} is approved`,
+            paragraphs: [
+              `Please send the approved items back to us${shipBy ? ` by ${shipBy.slice(0, 10)}` : ""}.`,
+              payer === "SHOP"
+                ? "Return shipping is on us; the instructions below explain how."
+                : "Return shipping is arranged and paid by you; the instructions below explain how.",
+              instructions,
+              "Once you have sent the parcel, record the carrier and tracking number on the return page.",
+            ],
+          });
+        }
+        case "return.rejected":
+          return returnUpdateMessage({
+            ...common,
+            subject: `Your return ${requestNumber} was not accepted`,
+            paragraphs: [
+              `Reason: ${field(row.payload, "reason") ?? "see the return page"}.`,
+              "If you think this is a mistake, reply on the return page and we will look again.",
+            ],
+          });
+        case "return.received": {
+          const received = numberField(row.payload, "received") ?? 0;
+          const missing = numberField(row.payload, "missing") ?? 0;
+          return returnUpdateMessage({
+            ...common,
+            subject: `We have received your return ${requestNumber}`,
+            paragraphs: [
+              `${received} unit${received === 1 ? "" : "s"} arrived and will be inspected.`,
+              ...(missing > 0
+                ? [
+                    `${missing} approved unit${missing === 1 ? " was" : "s were"} not in the parcel; only what arrived can be inspected.`,
+                  ]
+                : []),
+            ],
+          });
+        }
+        case "return.inspected": {
+          const restocked = numberField(row.payload, "restocked") ?? 0;
+          const held = numberField(row.payload, "held") ?? 0;
+          const writtenOff = numberField(row.payload, "writtenOff") ?? 0;
+          const back = numberField(row.payload, "returnedToCustomer") ?? 0;
+          return returnUpdateMessage({
+            ...common,
+            subject: `Your return ${requestNumber} has been inspected`,
+            paragraphs: [
+              `Accepted in good condition: ${restocked}. Set aside for repair or checks: ${held}. Not accepted: ${writtenOff + back}.`,
+              "What happens next (a refund or a replacement) will follow on the return page.",
+            ],
+          });
+        }
+        case "return.expired":
+          return returnUpdateMessage({
+            ...common,
+            subject: `Your return ${requestNumber} has expired`,
+            paragraphs: [
+              "The parcel was not sent by the ship-by date, so the request has closed. You can start a new request while the return window is open.",
+            ],
+          });
+        default:
+          return returnUpdateMessage({
+            ...common,
+            subject: `Your return ${requestNumber} was withdrawn`,
+            paragraphs: [
+              "You withdrew this request; nothing else changes on your order.",
+            ],
+          });
+      }
+    }
+    case "owner.return_requested": {
+      const requestNumber = field(row.payload, "requestNumber");
+      const orderNumber = field(row.payload, "orderNumber");
+      if (!requestNumber || !orderNumber)
+        throw new NotificationRenderError("return payload incomplete");
+      return ownerReturnRequestedMessage({
+        to: row.recipient,
+        requestNumber,
+        orderNumber,
+        units: numberField(row.payload, "units") ?? 0,
+        adminUrl: absolute(routes.adminReturns),
       });
     }
     case "security.recovery_code_used": {

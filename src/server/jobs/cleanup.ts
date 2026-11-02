@@ -4,6 +4,7 @@ import { cleanupCarts } from "@/features/cart/service";
 import { cleanupRateLimits } from "@/server/auth/rate-limit";
 import { db } from "@/server/db";
 
+import { runSweepCustomerUploads } from "./sweep-customer-uploads";
 import { runSweepUploads } from "./sweep-uploads";
 
 /**
@@ -15,6 +16,7 @@ export async function runCleanup(
 ): Promise<Record<string, number>> {
   const now = options.now ?? new Date();
   const uploads = await runSweepUploads({ now });
+  const customerUploads = await runSweepCustomerUploads({ now });
   const carts = await cleanupCarts(now);
   const rateLimits = await cleanupRateLimits(undefined, now.getTime());
   const sessions = await db.session.deleteMany({
@@ -34,5 +36,7 @@ export async function runCleanup(
     accessTokens: accessTokens.count,
     uploadsSwept: uploads.swept,
     uploadSweepErrors: uploads.errors,
+    customerUploadsSwept: customerUploads.swept,
+    customerUploadSweepErrors: customerUploads.errors,
   };
 }

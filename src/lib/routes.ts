@@ -54,6 +54,15 @@ export const routes = {
     `/checkout/confirmation/${orderId}`,
   accountOrders: "/account/orders",
   accountOrder: (orderNumber: string) => `/account/orders/${orderNumber}`,
+  accountOrderReturn: (orderNumber: string) =>
+    `/account/orders/${orderNumber}/return`,
+  accountReturns: "/account/returns",
+  accountReturn: (requestNumber: string) => `/account/returns/${requestNumber}`,
+  adminReturns: "/admin/returns",
+  adminReturn: (id: string) => `/admin/returns/${id}`,
+  adminReturnInspection: (id: string) => `/admin/returns/${id}/inspection`,
+  privateFile: (ledgerId: string, width?: number) =>
+    width ? `/api/files/${ledgerId}?w=${width}` : `/api/files/${ledgerId}`,
   trackOrder: "/orders/track",
   customArtwork: "/custom-artwork",
   contact: "/contact",

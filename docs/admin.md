@@ -578,6 +578,7 @@ Every transaction re-reads status under its lock or predicate and applies a tran
 | Publish / archive / delete products                |       |   ✓   |
 | Adjust stock, set thresholds                       |   ✓   |   ✓   |
 | Process, ship, deliver orders; staff notes         |   ✓   |   ✓   |
+| Review, receive and inspect customer returns (8.1) |   ✓   |   ✓   |
 | Cancel pending (unpaid) orders                     |   ✓   |   ✓   |
 | Cancel confirmed/processing orders                 |       |   ✓   |
 | Re-check with provider                             |   ✓   |   ✓   |

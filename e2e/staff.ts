@@ -111,3 +111,47 @@ export async function ageVerification(
   );
   return result.rowCount ?? 0;
 }
+
+/** Signs in with /admin as the return path, so enrolment lands there. */
+export async function signInForAdmin(page: Page, email: string): Promise<void> {
+  await page.goto("/login?next=%2Fadmin");
+  await page.getByLabel("Email address").fill(email);
+  await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+  await page.getByRole("button", { name: "Sign in" }).click();
+}
+
+/** Signs in a fresh staff account and enrols its second factor; returns the setup key. */
+export async function signInStaff(page: Page, email: string): Promise<string> {
+  await signInForAdmin(page, email);
+  await expect(page).toHaveURL(/\/account\/security\/two-factor/);
+  await page.getByLabel("Current password").fill(PASSWORD);
+  await page.getByRole("button", { name: "Start setup" }).click();
+  const key = await page.getByLabel("Setup key").textContent();
+  if (!key) throw new Error("no setup key");
+  await page.getByLabel("Six-digit code from the app").fill(codeFor(key));
+  await page
+    .getByRole("button", { name: "Turn on two-factor sign-in" })
+    .click();
+  await expect(page.getByRole("status")).toContainText(
+    "Two-factor sign-in is on",
+  );
+  await page
+    .getByRole("link", { name: "I have saved my recovery codes" })
+    .click();
+  await expect(page).toHaveURL(/\/admin/);
+  return key;
+}
+
+/** Units put back on the shelf by return inspections of one order (0 until inspected). */
+export async function restockedUnits(orderNumber: string): Promise<number> {
+  const result = await withDb((client) =>
+    client.query<{ total: string }>(
+      `SELECT coalesce(sum(a.delta), 0)::text AS total
+         FROM inventory_adjustments a
+         JOIN orders o ON o.id = a.order_id
+        WHERE o.order_number = $1 AND a.kind = 'RESTOCK_ON_RETURN'`,
+      [orderNumber],
+    ),
+  );
+  return Number(result.rows[0]?.total ?? 0);
+}

@@ -19,7 +19,16 @@ export type NotificationKind =
   | "security.recovery_code_used"
   | "order.shipped"
   | "order.delivered"
-  | "order.delivery_failed";
+  | "order.delivery_failed"
+  | "return.requested"
+  | "return.info_requested"
+  | "return.approved"
+  | "return.rejected"
+  | "return.received"
+  | "return.inspected"
+  | "return.expired"
+  | "return.withdrawn"
+  | "owner.return_requested";
 
 export interface EnqueueNotification {
   readonly kind: NotificationKind;

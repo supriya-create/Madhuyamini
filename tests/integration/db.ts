@@ -15,6 +15,7 @@ export async function resetDatabase(): Promise<void> {
       cart_items, carts, wishlist_items,
       notification_outbox, order_events, payment_webhook_events, order_access_tokens,
       refunds, payments, order_items, orders,
+      return_events, return_messages, return_shipments, return_items, return_requests, customer_uploads,
       admin_audit_log, inventory_adjustments, shipments, product_image_uploads,
       staff_pii_reveals, staff_pii_grants, staff_session_verifications,
       staff_recovery_codes, staff_two_factor, users

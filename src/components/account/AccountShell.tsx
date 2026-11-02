@@ -32,6 +32,7 @@ export function AccountShell({ user, title, children }: AccountShellProps) {
           items={[
             { label: "Overview", href: routes.account },
             { label: "Orders", href: routes.accountOrders },
+            { label: "Returns", href: routes.accountReturns },
             { label: "Your details", href: routes.accountProfile },
             { label: "Addresses", href: routes.accountAddresses },
             { label: "Wishlist", href: routes.accountWishlist },

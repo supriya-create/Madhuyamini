@@ -345,3 +345,45 @@ export function recoveryCodeUsedMessage(params: {
     ),
   };
 }
+
+/** One shape for every customer-facing return update; the renderer picks the words. */
+export function returnUpdateMessage(params: {
+  to: string;
+  requestNumber: string;
+  orderNumber: string;
+  subject: string;
+  paragraphs: readonly string[];
+  returnUrl: string;
+}): EmailMessage {
+  return {
+    to: params.to,
+    subject: `${params.subject} — ${BRAND}`,
+    ...layout(
+      [
+        `Return ${params.requestNumber} for order ${params.orderNumber}.`,
+        ...params.paragraphs,
+      ],
+      { label: "View the return", url: params.returnUrl },
+    ),
+  };
+}
+
+export function ownerReturnRequestedMessage(params: {
+  to: string;
+  requestNumber: string;
+  orderNumber: string;
+  units: number;
+  adminUrl: string;
+}): EmailMessage {
+  return {
+    to: params.to,
+    subject: `Return requested: ${params.requestNumber} (${params.units} unit${params.units === 1 ? "" : "s"}, order ${params.orderNumber})`,
+    ...layout(
+      [
+        `A customer has asked to return ${params.units} unit${params.units === 1 ? "" : "s"} from order ${params.orderNumber}.`,
+        "Review it in the admin and approve, ask a question or decline.",
+      ],
+      { label: "Open the return queue", url: params.adminUrl },
+    ),
+  };
+}

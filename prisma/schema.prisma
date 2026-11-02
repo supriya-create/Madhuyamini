@@ -129,6 +129,10 @@ model User {
   piiRevealsMade     StaffPiiReveal[]           @relation("PiiRevealStaff")
   piiRevealsAbout    StaffPiiReveal[]           @relation("PiiRevealCustomer")
 
+  returnRequests  ReturnRequest[]
+  customerUploads CustomerUpload[] @relation("CustomerUploadOwner")
+  staffUploads    CustomerUpload[] @relation("CustomerUploadIssuer")
+
   @@map("users")
 }
 
@@ -363,6 +367,9 @@ model ProductVariant {
   cartItems    CartItem[]
   orderItems   OrderItem[]
   adjustments  InventoryAdjustment[]
+
+  returnItems         ReturnItem[] @relation("ReturnItemVariant")
+  exchangeReturnItems ReturnItem[] @relation("ReturnItemExchangeVariant")
 
   @@index([productId, position])
   @@map("product_variants")
@@ -686,6 +693,8 @@ model Order {
   replacements  Order[]                @relation("ExchangeReplacements")
 
   /// Placement idempotency: one live order per cart (docs/checkout.md §5.7).
+  returnRequests ReturnRequest[]
+
   @@unique([cartId], map: "orders_one_live_per_cart", where: raw("status <> 'CANCELLED'::order_status"))
   /// One deposit and one balance order per commission (NULLs are distinct).
   @@unique([commissionRequestId, instalment])
@@ -716,6 +725,8 @@ model OrderItem {
   order   Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
   /// Sold variants are archived, never deleted.
   variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+
+  returnItems ReturnItem[]
 
   @@unique([orderId, variantId])
   @@map("order_items")
@@ -1106,4 +1117,262 @@ model ProductImageUpload {
 
   @@index([status, issuedAt])
   @@map("product_image_uploads")
+}
+
+// ---------------------------------------------------------------------------
+// Customer returns (Phase 8 step 8.1). Design: docs/phase-8-returns-custom-artwork.md §3, §7.2.
+// ---------------------------------------------------------------------------
+
+enum ReturnStatus {
+  REQUESTED
+  INFO_REQUESTED
+  APPROVED
+  IN_TRANSIT
+  OVERDUE
+  RECEIVED
+  INSPECTED
+  CLOSED
+  REJECTED
+  WITHDRAWN
+  EXPIRED
+  LOST
+
+  @@map("return_status")
+}
+
+enum ReturnReason {
+  DAMAGED_ON_ARRIVAL
+  WRONG_ITEM
+  NOT_AS_DESCRIBED
+  SIZE_OR_FIT
+  CHANGED_MIND
+  QUALITY
+  OTHER
+
+  @@map("return_reason")
+}
+
+enum ReturnResolution {
+  REFUND
+  EXCHANGE
+
+  @@map("return_resolution")
+}
+
+enum ReturnItemCondition {
+  AS_NEW
+  OPENED
+  USED
+  DAMAGED
+  WRONG_ITEM
+  NOT_RECEIVED
+
+  @@map("return_item_condition")
+}
+
+enum ReturnShipmentDirection {
+  INBOUND
+  OUTBOUND_TO_CUSTOMER
+
+  @@map("return_shipment_direction")
+}
+
+enum ReturnParty {
+  CUSTOMER
+  STAFF
+
+  @@map("return_party")
+}
+
+/// Private files uploaded by customers (evidence, references) or staff (labels, previews).
+enum UploadPurpose {
+  RETURN_EVIDENCE
+  RETURN_LABEL
+  RETURN_INSPECTION
+  ARTWORK_REFERENCE
+  ARTWORK_PREVIEW
+  ARTWORK_PRODUCTION
+
+  @@map("upload_purpose")
+}
+
+/// A customer's request to return some units of a delivered order. The order
+/// itself never changes status because of a return.
+model ReturnRequest {
+  id                     String       @id @default(uuid(7)) @db.Uuid
+  requestNumber          String       @unique @map("request_number")
+  orderId                String       @map("order_id") @db.Uuid
+  /// CHECK: user or access token present (guest returns are D8.3, not built).
+  userId                 String?      @map("user_id") @db.Uuid
+  accessTokenId          String?      @map("access_token_id") @db.Uuid
+  status                 ReturnStatus @default(REQUESTED)
+  /// One request per submitted form; a replay returns the existing request.
+  operationKey           String       @unique @map("operation_key") @db.Uuid
+  settlementOperationKey String?      @unique @map("settlement_operation_key") @db.Uuid
+  /// The policy values the request was evaluated against.
+  policySnapshot         Json         @map("policy_snapshot")
+  instructionsSnapshot   Json?        @map("instructions_snapshot")
+  decisionDueAt          DateTime?    @map("decision_due_at")
+  shipByAt               DateTime?    @map("ship_by_at")
+  receiveByAt            DateTime?    @map("receive_by_at")
+  receivedAt             DateTime?    @map("received_at")
+  receivedNote           String?      @map("received_note")
+  inspectedAt            DateTime?    @map("inspected_at")
+  inspectionNote         String?      @map("inspection_note")
+  settledAt              DateTime?    @map("settled_at")
+  /// CHECK: set iff the status is closed.
+  closedAt               DateTime?    @map("closed_at")
+  rejectionReason        String?      @map("rejection_reason")
+  lostDecision           String?      @map("lost_decision")
+  createdAt              DateTime     @default(now()) @map("created_at")
+  updatedAt              DateTime     @updatedAt @map("updated_at")
+
+  order     Order            @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  user      User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  items     ReturnItem[]
+  shipments ReturnShipment[]
+  events    ReturnEvent[]
+  messages  ReturnMessage[]
+
+  /// One open request per order (docs/phase-8-returns-custom-artwork.md §3.1).
+  @@unique([orderId], map: "return_requests_one_open_per_order", where: raw("status IN ('REQUESTED'::return_status, 'INFO_REQUESTED'::return_status, 'APPROVED'::return_status, 'IN_TRANSIT'::return_status, 'OVERDUE'::return_status, 'RECEIVED'::return_status, 'INSPECTED'::return_status)"))
+  @@index([orderId, createdAt])
+  @@index([status, decisionDueAt])
+  @@index([status, shipByAt])
+  @@index([status, receiveByAt])
+  @@index([userId, createdAt])
+  @@map("return_requests")
+}
+
+/// One order line within a request, with per-unit counts at each stage.
+model ReturnItem {
+  id                   String               @id @default(uuid(7)) @db.Uuid
+  returnRequestId      String               @map("return_request_id") @db.Uuid
+  orderItemId          String               @map("order_item_id") @db.Uuid
+  variantId            String               @map("variant_id") @db.Uuid
+  requestedQty         Int                  @map("requested_qty")
+  approvedQty          Int?                 @map("approved_qty")
+  receivedQty          Int?                 @map("received_qty")
+  restockQty           Int                  @default(0) @map("restock_qty")
+  repairQty            Int                  @default(0) @map("repair_qty")
+  quarantineQty        Int                  @default(0) @map("quarantine_qty")
+  writeOffQty          Int                  @default(0) @map("write_off_qty")
+  returnToCustomerQty  Int                  @default(0) @map("return_to_customer_qty")
+  notReceivedQty       Int                  @default(0) @map("not_received_qty")
+  /// Repair and quarantine units not yet released to stock or written off (§9.2).
+  heldQty              Int                  @default(0) @map("held_qty")
+  releasedQty          Int                  @default(0) @map("released_qty")
+  reason               ReturnReason
+  description          String?
+  resolutionPreference ReturnResolution     @default(REFUND) @map("resolution_preference")
+  exchangeVariantId    String?              @map("exchange_variant_id") @db.Uuid
+  condition            ReturnItemCondition?
+  inspectionNote       String?              @map("inspection_note")
+  /// Step 8.2 writes these; the CHECKs already refuse deductions on fault lines.
+  deductionInPaise     Int                  @default(0) @map("deduction_in_paise")
+  deductionReason      String?              @map("deduction_reason")
+  inspected            Boolean              @default(false)
+  createdAt            DateTime             @default(now()) @map("created_at")
+  updatedAt            DateTime             @updatedAt @map("updated_at")
+
+  request         ReturnRequest   @relation(fields: [returnRequestId], references: [id], onDelete: Cascade)
+  orderItem       OrderItem       @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  variant         ProductVariant  @relation("ReturnItemVariant", fields: [variantId], references: [id], onDelete: Restrict)
+  exchangeVariant ProductVariant? @relation("ReturnItemExchangeVariant", fields: [exchangeVariantId], references: [id], onDelete: Restrict)
+
+  @@unique([returnRequestId, orderItemId])
+  @@index([orderItemId])
+  @@map("return_items")
+}
+
+/// Inbound parcels (and outbound ones for units sent back to the customer).
+model ReturnShipment {
+  id               String                  @id @default(uuid(7)) @db.Uuid
+  returnRequestId  String                  @map("return_request_id") @db.Uuid
+  direction        ReturnShipmentDirection @default(INBOUND)
+  carrier          String
+  trackingNumber   String?                 @map("tracking_number")
+  /// CHECK: https:// only.
+  trackingUrl      String?                 @map("tracking_url")
+  shippedAt        DateTime                @map("shipped_at")
+  receivedAt       DateTime?               @map("received_at")
+  recordedBy       ReturnParty             @map("recorded_by")
+  recordedByUserId String?                 @map("recorded_by_user_id") @db.Uuid
+  labelFileId      String?                 @map("label_file_id") @db.Uuid
+  createdAt        DateTime                @default(now()) @map("created_at")
+
+  request ReturnRequest @relation(fields: [returnRequestId], references: [id], onDelete: Cascade)
+
+  @@index([returnRequestId, shippedAt])
+  @@map("return_shipments")
+}
+
+/// Append-only timeline (trigger plus no UPDATE/DELETE for the runtime role).
+model ReturnEvent {
+  id                String        @id @default(uuid(7)) @db.Uuid
+  returnRequestId   String        @map("return_request_id") @db.Uuid
+  type              String
+  actor             OrderActor
+  actorUserId       String?       @map("actor_user_id") @db.Uuid
+  fromStatus        ReturnStatus? @map("from_status")
+  toStatus          ReturnStatus? @map("to_status")
+  visibleToCustomer Boolean       @default(true) @map("visible_to_customer")
+  note              String?
+  data              Json?
+  createdAt         DateTime      @default(now()) @map("created_at")
+
+  request ReturnRequest @relation(fields: [returnRequestId], references: [id], onDelete: Cascade)
+
+  @@index([returnRequestId, createdAt])
+  @@map("return_events")
+}
+
+/// Clarification thread between the customer and staff; append-only.
+model ReturnMessage {
+  id              String      @id @default(uuid(7)) @db.Uuid
+  returnRequestId String      @map("return_request_id") @db.Uuid
+  author          ReturnParty
+  authorUserId    String?     @map("author_user_id") @db.Uuid
+  body            String
+  createdAt       DateTime    @default(now()) @map("created_at")
+
+  request ReturnRequest @relation(fields: [returnRequestId], references: [id], onDelete: Cascade)
+
+  @@index([returnRequestId, createdAt])
+  @@map("return_messages")
+}
+
+/// Ledger of private files: issued signature → verified upload → attached to
+/// a request, or swept. Mirrors product_image_uploads; never public.
+model CustomerUpload {
+  id              String        @id @default(uuid(7)) @db.Uuid
+  purpose         UploadPurpose
+  /// CHECK: owner or issuing staff member present.
+  ownerUserId     String?       @map("owner_user_id") @db.Uuid
+  issuedByStaffId String?       @map("issued_by_staff_id") @db.Uuid
+  targetType      String?       @map("target_type")
+  targetId        String?       @map("target_id") @db.Uuid
+  /// CHECK: inside madhuyamini/returns/ or madhuyamini/commissions/.
+  publicId        String        @unique @map("public_id")
+  folder          String
+  deliveryType    String        @default("authenticated") @map("delivery_type")
+  status          UploadStatus  @default(ISSUED)
+  format          String?
+  bytes           Int?
+  width           Int?
+  height          Int?
+  sha256          String?
+  /// Set once the upload response signature and facts were verified.
+  verifiedAt      DateTime?     @map("verified_at")
+  issuedAt        DateTime      @default(now()) @map("issued_at")
+  resolvedAt      DateTime?     @map("resolved_at")
+  sweepError      String?       @map("sweep_error")
+
+  owner  User? @relation("CustomerUploadOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  issuer User? @relation("CustomerUploadIssuer", fields: [issuedByStaffId], references: [id], onDelete: Restrict)
+
+  @@index([status, issuedAt])
+  @@index([targetType, targetId])
+  @@index([ownerUserId, issuedAt])
+  @@map("customer_uploads")
 }

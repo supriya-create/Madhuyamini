@@ -279,3 +279,16 @@ Enum additions: `OrderStatus` `PROCESSING`, `SHIPPED`, `DELIVERED`, `DELIVERY_FA
 | `products.kind` (`product_kind`: CATALOGUE, COMMISSION)                             | Commission products carry instalment lines only and never appear in storefront reads (`kind = CATALOGUE` filter).                                           |
 
 Design: [phase-8-returns-custom-artwork.md](phase-8-returns-custom-artwork.md) §7.1 and §16.
+
+## Phase 8 additions, step 8.1 (migration `20261102210000_phase8_returns`)
+
+| Table              | Purpose                                                                                                                                                                                                                              |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `return_requests`  | A customer's request to return units of a delivered order: status machine, operation key (unique), policy and instructions snapshots, clocks; one open request per order (partial unique index); `closed_at` set iff closed (CHECK). |
+| `return_items`     | One per order line: requested, approved and received units; inspection decisions that must add up to what was received (CHECK); held units; exchange preference naming a variant (CHECK); deduction rules for step 8.2 (CHECK).      |
+| `return_shipments` | Inbound parcels (and outbound ones to the customer): carrier, tracking (`https://` CHECK), who recorded it.                                                                                                                          |
+| `return_events`    | Append-only timeline with customer visibility (trigger; no UPDATE/DELETE for the runtime role).                                                                                                                                      |
+| `return_messages`  | Append-only clarification thread (same protections).                                                                                                                                                                                 |
+| `customer_uploads` | Private file ledger: purpose, owner or issuing staff (CHECK), public id inside `madhuyamini/returns/` or `madhuyamini/commissions/` (CHECK), verification facts, status, sweep errors.                                               |
+
+Deletion: a user with uploads or requests is `Restrict`-protected (account deletion is Phase 10); requests cascade to their items, parcels, events and messages; orders and order items are never deleted while referenced. Design: [phase-8-returns-custom-artwork.md](phase-8-returns-custom-artwork.md) §7.2 and §16.

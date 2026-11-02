@@ -2,6 +2,7 @@ import "server-only";
 
 import { runCleanup } from "./cleanup";
 import { runExpireReservations } from "./expire-reservations";
+import { runExpireReturns } from "./expire-returns";
 import { runProcessWebhooks } from "./process-webhooks";
 import { runReconcilePayments, runRecoverPayments } from "./reconcile-payments";
 import { runRefundPayments } from "./refund-payments";
@@ -20,6 +21,7 @@ export const jobs = {
   "process-webhooks": runProcessWebhooks,
   "refund-payments": runRefundPayments,
   "send-notifications": runSendNotifications,
+  "expire-returns": runExpireReturns,
   cleanup: runCleanup,
 } as const;
 

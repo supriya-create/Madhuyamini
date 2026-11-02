@@ -7,6 +7,7 @@
     { "path": "/api/cron/send-notifications", "schedule": "*/5 * * * *" },
     { "path": "/api/cron/reconcile-payments", "schedule": "*/15 * * * *" },
     { "path": "/api/cron/refund-payments", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/expire-returns", "schedule": "*/15 * * * *" },
     { "path": "/api/cron/cleanup", "schedule": "0 3 * * *" }
   ]
 }
