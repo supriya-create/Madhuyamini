@@ -413,7 +413,7 @@ Fixes made because tests caught them: a `"use server"` module may export only as
 
 ## Phase 8 — Returns, exchanges and custom artwork
 
-Status: **proposal ready for approval, not implemented** (2 Nov 2026). The design is [phase-8-returns-custom-artwork.md](phase-8-returns-custom-artwork.md): customer returns and exchanges for delivered orders, item-level refunds on the Phase 6 refund worker and the Phase 7 refund operation keys, and a quotation-based custom artwork workflow, with a decision register (D8.1–D8.18) that needs the owner's answers before the gated steps start. Coupons and verified-purchase reviews, listed under "advanced commerce" in the table below, are deferred to a later proposal; shipments and tracking already shipped in Phase 7.
+Status: **proposal ready for approval, not implemented** (2 Nov 2026). The design is [phase-8-returns-custom-artwork.md](phase-8-returns-custom-artwork.md): customer returns and exchanges for delivered orders, item-level refunds on the Phase 6 refund worker and the Phase 7 refund operation keys, and a quotation-based custom artwork workflow, with a decision register (D8.1–D8.18) that needs the owner's answers before the gated steps start. The readiness review of 2 Nov 2026 is in [phase-8-decision-register.md](phase-8-decision-register.md) (all 18 decisions pending owner approval) and [phase-8-implementation-readiness.md](phase-8-implementation-readiness.md) (dependency graph, risks, rollback, production criteria). Coupons and verified-purchase reviews, listed under "advanced commerce" in the table below, are deferred to a later proposal; shipments and tracking already shipped in Phase 7.
 
 ---
 
