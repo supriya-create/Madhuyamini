@@ -1,22 +1,22 @@
 # Madhuyamini — Roadmap
 
-Status: **Phases 1–7 implemented (1 Nov 2026).** Brand inputs (D2) and the Razorpay test-mode smoke are still outstanding; the admin dashboard ([admin.md](admin.md), §17 for implementation notes) is built and tested, and its production blockers are listed in admin.md §16.
+Status: **Phases 1–7 implemented (1 Nov 2026); Phase 8 proposal ready for approval (2 Nov 2026), not started.** Brand inputs (D2) and the Razorpay test-mode smoke are still outstanding; the admin dashboard ([admin.md](admin.md), §17 for implementation notes) is built and tested, and its production blockers are listed in admin.md §16.
 
 Related: [architecture.md](architecture.md) · [design-system.md](design-system.md). Decision IDs (D1–D9) refer to architecture.md §7.
 
-| #   | Phase                                       | Status                                       | Decisions needed first      |
-| --- | ------------------------------------------- | -------------------------------------------- | --------------------------- |
-| 1   | Project setup and homepage foundation       | **Implemented; open items**                  | D2 (D1 decided)             |
-| 2   | Database and backend foundation             | **Implemented; open items**                  | D4 (deferred to 11)         |
-| 3   | Product catalog                             | **Implemented; open items**                  | D2 (imagery)                |
-| 4   | Authentication and customer accounts        | **Implemented** ([auth.md](auth.md))         | decided (D3, D5, P1–P5)     |
-| 5   | Cart and wishlist                           | **Implemented** ([cart.md](cart.md))         | decided (C1–C6)             |
-| 6   | Checkout and payments (Razorpay + COD)      | **Implemented** ([checkout.md](checkout.md)) | decided (D6, D7a–c, P6–P12) |
-| 7   | Admin dashboard                             | **Implemented** ([admin.md](admin.md))       | A1–A13                      |
-| 8   | Advanced e-commerce features                | Not started                                  | D7                          |
-| 9   | Brand experience and content                | Not started                                  | D2                          |
-| 10  | Testing, security and performance hardening | Not started                                  | D8, D9                      |
-| 11  | Production deployment                       | Not started                                  | none                        |
+| #   | Phase                                       | Status                                                                                                   | Decisions needed first      |
+| --- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------- | --------------------------- |
+| 1   | Project setup and homepage foundation       | **Implemented; open items**                                                                              | D2 (D1 decided)             |
+| 2   | Database and backend foundation             | **Implemented; open items**                                                                              | D4 (deferred to 11)         |
+| 3   | Product catalog                             | **Implemented; open items**                                                                              | D2 (imagery)                |
+| 4   | Authentication and customer accounts        | **Implemented** ([auth.md](auth.md))                                                                     | decided (D3, D5, P1–P5)     |
+| 5   | Cart and wishlist                           | **Implemented** ([cart.md](cart.md))                                                                     | decided (C1–C6)             |
+| 6   | Checkout and payments (Razorpay + COD)      | **Implemented** ([checkout.md](checkout.md))                                                             | decided (D6, D7a–c, P6–P12) |
+| 7   | Admin dashboard                             | **Implemented** ([admin.md](admin.md))                                                                   | A1–A13                      |
+| 8   | Returns, exchanges and custom artwork       | **Proposal ready for approval** ([phase-8-returns-custom-artwork.md](phase-8-returns-custom-artwork.md)) | D8.1–D8.18 (proposal §14)   |
+| 9   | Brand experience and content                | Not started                                                                                              | D2                          |
+| 10  | Testing, security and performance hardening | Not started                                                                                              | D8, D9                      |
+| 11  | Production deployment                       | Not started                                                                                              | none                        |
 
 ### Sequencing notes
 
@@ -408,6 +408,12 @@ Fixes made because tests caught them: a `"use server"` module may export only as
 - **Resend idempotency header** is sent as `Idempotency-Key`; if Resend ignores it, the only duplicate window is a crash between send and completion (logged on the row).
 - **Guest orders are not linked to a later account** with the same email (Phase 8).
 - **Refund status webhooks** (`refund.processed`) are applied; staff-initiated refunds and the review screen are Phase 7.
+
+---
+
+## Phase 8 — Returns, exchanges and custom artwork
+
+Status: **proposal ready for approval, not implemented** (2 Nov 2026). The design is [phase-8-returns-custom-artwork.md](phase-8-returns-custom-artwork.md): customer returns and exchanges for delivered orders, item-level refunds on the Phase 6 refund worker and the Phase 7 refund operation keys, and a quotation-based custom artwork workflow, with a decision register (D8.1–D8.18) that needs the owner's answers before the gated steps start. Coupons and verified-purchase reviews, listed under "advanced commerce" in the table below, are deferred to a later proposal; shipments and tracking already shipped in Phase 7.
 
 ---
 
