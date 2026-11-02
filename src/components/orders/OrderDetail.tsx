@@ -14,6 +14,7 @@ import styles from "./OrderDetail.module.css";
 const paymentLabels = {
   RAZORPAY: "Paid online",
   COD: "Cash on delivery",
+  STORE_CREDIT: "Settled by exchange credit",
 } as const;
 
 /**

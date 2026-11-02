@@ -1,26 +1,17 @@
 import "server-only";
 
-import {
-  daysToMs,
-  getCheckoutPolicy,
-  minutesToMs,
-} from "@/config/checkout-policy";
+import { daysToMs, getCheckoutPolicy } from "@/config/checkout-policy";
 import { Prisma } from "@/generated/prisma/client";
 import type { PaymentMethod } from "@/generated/prisma/enums";
 import { findAddresses } from "@/features/account/data";
 import * as cartData from "@/features/cart/data";
 import { toCartView } from "@/features/cart/service";
 import type { CartLineView } from "@/features/cart/types";
-import {
-  StockUnavailableError,
-  commitForOrder,
-  reserveForOrder,
-} from "@/features/inventory/service";
+import { StockUnavailableError } from "@/features/inventory/service";
 import * as orders from "@/features/orders/data";
-import { generateOrderNumber } from "@/features/orders/order-number";
+import { createOrderFromLines } from "@/features/orders/placement";
 import { ensureProviderOrder } from "@/features/payments/service";
 import { NotFoundError } from "@/server/errors";
-import { enqueueOrderConfirmed } from "@/server/notifications/outbox";
 import {
   generateOrderAccessToken,
   hashOrderAccessToken,
@@ -29,9 +20,14 @@ import { hashCartToken } from "@/server/cart/token";
 import type { CartContext } from "@/server/cart/context";
 import { db } from "@/server/db";
 
-import { buildQuote, codRefusal, includedTax, quoteProblem } from "./rules";
+import { buildQuote, codRefusal, quoteProblem } from "./rules";
 import type { Quote, QuoteLine } from "./rules";
-import type { CheckoutView, PlaceOrderInput, PlaceOrderOutcome } from "./types";
+import type {
+  CheckoutPaymentMethod,
+  CheckoutView,
+  PlaceOrderInput,
+  PlaceOrderOutcome,
+} from "./types";
 
 /**
  * Checkout (docs/checkout.md §5.5–§5.7). `placeOrder` is transaction T1/T2
@@ -63,7 +59,7 @@ export async function getCheckoutView(
   if (!cart) return null;
   const view = toCartView(cart);
   const lines = toQuoteLines(view.lines);
-  const quotes: Record<PaymentMethod, Quote> = {
+  const quotes: Record<CheckoutPaymentMethod, Quote> = {
     RAZORPAY: buildQuote(policy, lines, "RAZORPAY"),
     COD: buildQuote(policy, lines, "COD"),
   };
@@ -204,7 +200,7 @@ async function placeInTransaction(
     select: { id: true, taxRateBp: true, hsnCode: true },
   });
   const taxByProduct = new Map(products.map((p) => [p.id, p]));
-  const items = view.lines.map((line) => {
+  const lines = view.lines.map((line) => {
     const tax = taxByProduct.get(line.product.id);
     return {
       variantId: line.variant.id,
@@ -214,123 +210,49 @@ async function placeInTransaction(
       sku: line.variant.sku,
       quantity: line.quantity,
       unitPriceInPaise: line.unitPriceInPaise,
-      lineTotalInPaise: line.unitPriceInPaise * line.quantity,
       taxRateBp: tax?.taxRateBp ?? null,
       hsnCode: tax?.hsnCode ?? null,
       imageUrl: line.product.image?.url ?? null,
       imageAlt: line.product.image?.alt ?? null,
     };
   });
-  const taxInPaise = items.every((item) => item.taxRateBp !== null)
-    ? items.reduce(
-        (sum, item) =>
-          sum + includedTax(item.lineTotalInPaise, item.taxRateBp ?? 0),
-        0,
-      )
-    : null;
 
-  const isCod = input.paymentMethod === "COD";
-  const orderNumber = generateOrderNumber();
-  const pendingExpiresAt = isCod
-    ? null
-    : new Date(now.getTime() + minutesToMs(policy.reservation.ttlMinutes));
-
-  const order = await tx.order.create({
-    data: {
-      orderNumber,
-      userId: input.customer.userId,
-      email: input.customer.email,
-      phone: input.customer.phone,
-      status: isCod ? "CONFIRMED" : "PENDING_PAYMENT",
-      paymentMethod: input.paymentMethod,
-      currency: policy.payment.currency,
+  // Order rows, items, stock, first attempt, event and e-mail: the shared
+  // placement path (Phase 8 step 8.0), still inside the cart's lock.
+  const placed = await createOrderFromLines(tx, {
+    kind: "STANDARD",
+    links: {
+      exchangeOfOrderId: null,
+      commissionRequestId: null,
+      instalment: null,
+    },
+    paymentMethod: input.paymentMethod,
+    lines,
+    amounts: {
       subtotalInPaise: quote.subtotalInPaise,
       shippingInPaise: quote.shippingInPaise,
       codFeeInPaise: quote.codFeeInPaise,
       discountInPaise: quote.discountInPaise,
       totalInPaise: quote.totalInPaise,
-      taxInPaise,
-      recipientName: input.address.recipientName,
-      addressLine1: input.address.line1,
-      addressLine2: input.address.line2,
-      landmark: input.address.landmark,
-      city: input.address.city,
-      state: input.address.state,
-      postalCode: input.address.postalCode,
-      country: input.address.country,
-      customerNote: input.customerNote,
-      cartId: cart.id,
-      pendingExpiresAt,
-      confirmedAt: isCod ? now : null,
-      createdAt: now,
-      items: { createMany: { data: items } },
     },
-    select: { id: true },
+    stock: "manage",
+    customer: input.customer,
+    address: input.address,
+    customerNote: input.customerNote,
+    cartId: cart.id,
+    now,
   });
 
-  const stockLines = items.map((item) => ({
-    variantId: item.variantId,
-    quantity: item.quantity,
-  }));
-  const receipt = `${orderNumber}-1`;
-  let attemptId: string | null = null;
-
-  if (isCod) {
-    await commitForOrder(tx, stockLines);
-    await tx.payment.create({
-      data: {
-        orderId: order.id,
-        attemptNo: 1,
-        method: "COD",
-        status: "CREATED",
-        amountInPaise: quote.totalInPaise,
-        receipt,
-      },
-    });
+  if (placed.status === "CONFIRMED") {
     await tx.cart.update({
       where: { id: cart.id },
       data: { status: "CONVERTED" },
-    });
-    await orders.recordOrderEvent(tx, {
-      orderId: order.id,
-      type: "order.placed",
-      actor: "CUSTOMER",
-      toStatus: "CONFIRMED",
-      note: "Cash on delivery; stock committed.",
-    });
-    await enqueueOrderConfirmed(tx, {
-      orderId: order.id,
-      orderNumber,
-      customerEmail: input.customer.email,
-    });
-  } else {
-    if (pendingExpiresAt === null) throw new Error("unreachable");
-    await reserveForOrder(tx, order.id, stockLines, pendingExpiresAt);
-    const attempt = await tx.payment.create({
-      data: {
-        orderId: order.id,
-        attemptNo: 1,
-        method: "RAZORPAY",
-        status: "INITIATED",
-        amountInPaise: quote.totalInPaise,
-        receipt,
-      },
-      select: { id: true },
-    });
-    attemptId = attempt.id;
-    await orders.recordOrderEvent(tx, {
-      orderId: order.id,
-      type: "order.placed",
-      actor: "CUSTOMER",
-      toStatus: "PENDING_PAYMENT",
-      note: "Stock held until the payment deadline.",
-      data: { pendingExpiresAt: pendingExpiresAt.toISOString() },
     });
   }
 
   if (guestToken) {
     await orders.createAccessToken(tx, {
-      orderId: order.id,
+      orderId: placed.orderId,
       tokenHash: hashOrderAccessToken(guestToken),
       expiresAt: new Date(
         now.getTime() + daysToMs(policy.guestAccess.tokenTtlDays),
@@ -340,11 +262,11 @@ async function placeInTransaction(
 
   return {
     kind: "placed",
-    orderId: order.id,
-    orderNumber,
+    orderId: placed.orderId,
+    orderNumber: placed.orderNumber,
     paymentMethod: input.paymentMethod,
     guestToken,
     providerOrderId: null,
-    attemptId,
+    attemptId: placed.attemptId,
   };
 }

@@ -9,7 +9,8 @@ import type { ProductSort } from "./schemas";
 
 /**
  * Catalog data access. Every query uses an explicit `select`, returns bounded
- * result sets, and only ever exposes ACTIVE products to the storefront.
+ * result sets, and only ever exposes ACTIVE catalogue products to the
+ * storefront (commission products, Phase 8, never appear here).
  */
 
 const categorySummarySelect = {
@@ -187,7 +188,9 @@ interface ProductIdRow {
  * is bound as a parameter: nothing from the request is interpolated as SQL.
  */
 export async function findProductsPage(filters: ProductPageFilters) {
-  const conditions: Prisma.Sql[] = [sql`p.status = 'ACTIVE'`];
+  const conditions: Prisma.Sql[] = [
+    sql`p.status = 'ACTIVE' AND p.kind = 'CATALOGUE'`,
+  ];
 
   if (filters.categoryIds) {
     conditions.push(
@@ -266,7 +269,7 @@ export async function findAvailableTechniques(categoryIds?: readonly string[]) {
   const rows = await db.$queryRaw<Array<{ technique: Technique }>>`
     SELECT DISTINCT unnest(p.techniques) AS technique
     FROM products p
-    WHERE p.status = 'ACTIVE' ${scope}
+    WHERE p.status = 'ACTIVE' AND p.kind = 'CATALOGUE' ${scope}
   `;
   return rows.map((row) => row.technique);
 }
@@ -283,6 +286,7 @@ export async function findRelatedProducts(params: {
   return db.product.findMany({
     where: {
       status: "ACTIVE",
+      kind: "CATALOGUE",
       id: { not: params.productId },
       categoryId: { in: [...params.categoryIds] },
     },
@@ -294,14 +298,14 @@ export async function findRelatedProducts(params: {
 
 export function findActiveProductBySlug(slug: string) {
   return db.product.findFirst({
-    where: { slug, status: "ACTIVE" },
+    where: { slug, status: "ACTIVE", kind: "CATALOGUE" },
     select: productDetailSelect,
   });
 }
 
 export function findFeaturedProducts(take: number) {
   return db.product.findMany({
-    where: { status: "ACTIVE", isFeatured: true },
+    where: { status: "ACTIVE", kind: "CATALOGUE", isFeatured: true },
     select: productSummarySelect,
     orderBy: newestOrder,
     take,

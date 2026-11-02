@@ -31,6 +31,15 @@ enum ProductStatus {
   @@map("product_status")
 }
 
+/// CATALOGUE products are sold from the storefront. COMMISSION products exist
+/// only to carry commission instalment lines (Phase 8); they are never listed.
+enum ProductKind {
+  CATALOGUE
+  COMMISSION
+
+  @@map("product_kind")
+}
+
 /// Decorative techniques applied to a piece. A product lists every technique
 /// used (at least one), so a print is never presented as a painting.
 enum Technique {
@@ -257,6 +266,7 @@ model Product {
   careInstructions    String?              @map("care_instructions")
   categoryId          String               @map("category_id") @db.Uuid
   status              ProductStatus        @default(DRAFT)
+  kind                ProductKind          @default(CATALOGUE)
   publishedAt         DateTime?            @map("published_at")
   isFeatured          Boolean              @default(false) @map("is_featured")
   /// A single original: its one variant carries stock 1.
@@ -529,6 +539,9 @@ enum CancellationReason {
   ADMIN
   COD_REFUSED
   DELIVERY_FAILED
+  /// Phase 8: a replacement order that was never paid, and a cancelled commission.
+  EXCHANGE_LAPSED
+  COMMISSION_CANCELLED
 
   @@map("cancellation_reason")
 }
@@ -536,8 +549,29 @@ enum CancellationReason {
 enum PaymentMethod {
   RAZORPAY
   COD
+  /// Zero-due replacement and zero-balance instalment orders (Phase 8): no
+  /// payment attempt is ever created; CHECK orders_store_credit_is_free.
+  STORE_CREDIT
 
   @@map("payment_method")
+}
+
+/// What an order is for (Phase 8, docs/phase-8-returns-custom-artwork.md §7.1).
+enum OrderKind {
+  STANDARD
+  /// Created at a return settlement; linked to the original by exchange_of_order_id.
+  EXCHANGE_REPLACEMENT
+  /// A commission deposit or balance; linked by commission_request_id + instalment.
+  COMMISSION_INSTALMENT
+
+  @@map("order_kind")
+}
+
+enum InstalmentKind {
+  DEPOSIT
+  BALANCE
+
+  @@map("instalment_kind")
 }
 
 /// INITIATED: our intent row exists and no provider order yet; CREATED: the
@@ -593,43 +627,50 @@ enum NotificationStatus {
 /// A purchase. Amounts are integer paise computed on the server; the address
 /// is copied at placement so later edits never change history.
 model Order {
-  id                 String              @id @default(uuid(7)) @db.Uuid
-  orderNumber        String              @unique @map("order_number")
+  id                  String              @id @default(uuid(7)) @db.Uuid
+  orderNumber         String              @unique @map("order_number")
   /// Null for guests; guest access goes through OrderAccessToken.
-  userId             String?             @map("user_id") @db.Uuid
+  userId              String?             @map("user_id") @db.Uuid
   /// Lower-cased.
-  email              String
+  email               String
   /// E.164.
-  phone              String
-  status             OrderStatus         @default(PENDING_PAYMENT)
-  paymentMethod      PaymentMethod       @map("payment_method")
-  currency           String              @default("INR")
-  subtotalInPaise    Int                 @map("subtotal_in_paise")
-  shippingInPaise    Int                 @map("shipping_in_paise")
-  codFeeInPaise      Int                 @default(0) @map("cod_fee_in_paise")
-  discountInPaise    Int                 @default(0) @map("discount_in_paise")
-  totalInPaise       Int                 @map("total_in_paise")
+  phone               String
+  status              OrderStatus         @default(PENDING_PAYMENT)
+  paymentMethod       PaymentMethod       @map("payment_method")
+  kind                OrderKind           @default(STANDARD)
+  /// CHECK: set iff kind = EXCHANGE_REPLACEMENT.
+  exchangeOfOrderId   String?             @map("exchange_of_order_id") @db.Uuid
+  /// CHECK: set together with instalment iff kind = COMMISSION_INSTALMENT. The
+  /// foreign key to custom_artwork_requests arrives with that table (step 8.5).
+  commissionRequestId String?             @map("commission_request_id") @db.Uuid
+  instalment          InstalmentKind?
+  currency            String              @default("INR")
+  subtotalInPaise     Int                 @map("subtotal_in_paise")
+  shippingInPaise     Int                 @map("shipping_in_paise")
+  codFeeInPaise       Int                 @default(0) @map("cod_fee_in_paise")
+  discountInPaise     Int                 @default(0) @map("discount_in_paise")
+  totalInPaise        Int                 @map("total_in_paise")
   /// Tax included in the total, informational; null while no product carries a rate.
-  taxInPaise         Int?                @map("tax_in_paise")
-  recipientName      String              @map("recipient_name")
-  addressLine1       String              @map("address_line1")
-  addressLine2       String?             @map("address_line2")
-  landmark           String?
-  city               String
-  state              String
-  postalCode         String              @map("postal_code")
-  country            String              @default("IN")
-  customerNote       String?             @map("customer_note")
-  cartId             String?             @map("cart_id") @db.Uuid
+  taxInPaise          Int?                @map("tax_in_paise")
+  recipientName       String              @map("recipient_name")
+  addressLine1        String              @map("address_line1")
+  addressLine2        String?             @map("address_line2")
+  landmark            String?
+  city                String
+  state               String
+  postalCode          String              @map("postal_code")
+  country             String              @default("IN")
+  customerNote        String?             @map("customer_note")
+  cartId              String?             @map("cart_id") @db.Uuid
   /// Online orders: the reservation deadline. Null for COD.
-  pendingExpiresAt   DateTime?           @map("pending_expires_at")
+  pendingExpiresAt    DateTime?           @map("pending_expires_at")
   /// How many times the deadline was extended by a new attempt (policy.reservation.maxExtensions).
-  deadlineExtensions Int                 @default(0) @map("deadline_extensions")
-  confirmedAt        DateTime?           @map("confirmed_at")
-  cancelledAt        DateTime?           @map("cancelled_at")
-  cancellationReason CancellationReason? @map("cancellation_reason")
-  createdAt          DateTime            @default(now()) @map("created_at")
-  updatedAt          DateTime            @updatedAt @map("updated_at")
+  deadlineExtensions  Int                 @default(0) @map("deadline_extensions")
+  confirmedAt         DateTime?           @map("confirmed_at")
+  cancelledAt         DateTime?           @map("cancelled_at")
+  cancellationReason  CancellationReason? @map("cancellation_reason")
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
 
   user          User?                  @relation(fields: [userId], references: [id], onDelete: SetNull)
   cart          Cart?                  @relation(fields: [cartId], references: [id], onDelete: SetNull)
@@ -641,12 +682,17 @@ model Order {
   events        OrderEvent[]
   notifications NotificationOutbox[]
   shipment      Shipment?
+  exchangeOf    Order?                 @relation("ExchangeReplacements", fields: [exchangeOfOrderId], references: [id], onDelete: Restrict)
+  replacements  Order[]                @relation("ExchangeReplacements")
 
   /// Placement idempotency: one live order per cart (docs/checkout.md §5.7).
   @@unique([cartId], map: "orders_one_live_per_cart", where: raw("status <> 'CANCELLED'::order_status"))
+  /// One deposit and one balance order per commission (NULLs are distinct).
+  @@unique([commissionRequestId, instalment])
   @@index([userId, createdAt])
   @@index([status, pendingExpiresAt])
   @@index([email])
+  @@index([exchangeOfOrderId])
   @@map("orders")
 }
 

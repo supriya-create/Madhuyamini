@@ -4,6 +4,9 @@ import type { AddressRow } from "@/features/account/data";
 
 import type { CodRefusal, Quote, QuoteProblem } from "./rules";
 
+/** What a customer can choose at checkout; store credit is set by the shop (Phase 8). */
+export type CheckoutPaymentMethod = Exclude<PaymentMethod, "STORE_CREDIT">;
+
 /** The delivery address as copied onto the order. */
 export interface AddressSnapshot {
   readonly recipientName: string;
@@ -32,7 +35,7 @@ export interface PlaceOrderInput {
     | { readonly kind: "guest"; readonly tokenHash: string };
   readonly customer: CheckoutCustomer;
   readonly address: AddressSnapshot;
-  readonly paymentMethod: PaymentMethod;
+  readonly paymentMethod: CheckoutPaymentMethod;
   readonly quoteHash: string;
   readonly customerNote: string | null;
   readonly now?: Date;
@@ -66,7 +69,7 @@ export interface CheckoutView {
   readonly cartId: string;
   readonly cart: CartView;
   readonly lines: readonly CartLineView[];
-  readonly quotes: Readonly<Record<PaymentMethod, Quote>>;
+  readonly quotes: Readonly<Record<CheckoutPaymentMethod, Quote>>;
   readonly codRefusal: CodRefusal | null;
   readonly belowMinimum: boolean;
   readonly addresses: readonly AddressRow[];

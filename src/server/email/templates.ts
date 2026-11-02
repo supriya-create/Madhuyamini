@@ -104,10 +104,21 @@ export interface OrderEmailLine {
   readonly lineTotal: string;
 }
 
+function paymentLabel(method: OrderEmailSummary["paymentMethod"]): string {
+  switch (method) {
+    case "COD":
+      return "cash on delivery";
+    case "STORE_CREDIT":
+      return "settled by store credit";
+    case "RAZORPAY":
+      return "paid online";
+  }
+}
+
 export interface OrderEmailSummary {
   readonly orderNumber: string;
   readonly recipientName: string;
-  readonly paymentMethod: "RAZORPAY" | "COD";
+  readonly paymentMethod: "RAZORPAY" | "COD" | "STORE_CREDIT";
   readonly lines: readonly OrderEmailLine[];
   readonly subtotal: string;
   readonly shipping: string;
@@ -135,7 +146,9 @@ export function orderConfirmedMessage(params: {
   const payment =
     summary.paymentMethod === "COD"
       ? `Please keep ${summary.total} ready to pay on delivery.`
-      : `Your payment of ${summary.total} has been received.`;
+      : summary.paymentMethod === "STORE_CREDIT"
+        ? "Nothing is due: this order is settled by your exchange credit."
+        : `Your payment of ${summary.total} has been received.`;
   return {
     to: params.to,
     subject: `Order ${summary.orderNumber} confirmed — ${BRAND}`,
@@ -291,7 +304,7 @@ export function ownerNewOrderMessage(params: {
   const { summary } = params;
   return {
     to: params.to,
-    subject: `New order ${summary.orderNumber} (${summary.total}, ${summary.paymentMethod === "COD" ? "cash on delivery" : "paid online"})`,
+    subject: `New order ${summary.orderNumber} (${summary.total}, ${paymentLabel(summary.paymentMethod)})`,
     ...layout([
       `A new order was placed by ${params.customerEmail}.`,
       ...describeLines(summary),

@@ -778,3 +778,18 @@ Decisions marked "blocks go-live" need the policy pages (Phase 9) to state the s
 **A5.** Exchange: returned unit credit `126_566`; replacement variant now `139_900`; shipping free (shop at fault): `subtotal 139_900`, `discount 126_566`, `total 13_334` → `PENDING_PAYMENT`, paid online. Replacement `129_900` with credit `126_566`: `total 3_334`. Replacement `119_900`: `discount 119_900`, `total 0` → `STORE_CREDIT`, surplus `6_666` refunded on the original order.
 
 **A6.** Deposit: quotation total `1_250_000`, deposit 50 % → `625_000`; with 33 % → `ceil(412_500) = 412_500`; total `1_000_001` at 50 % → `ceil(500_000.5) = 500_001`, balance `500_000`.
+
+---
+
+## 16. Implementation log
+
+### Step 8.0: placement entry point (2 November 2026)
+
+Landed after the owner approved D8.1–D8.18 as recommended. Behaviour-preserving: the Phase 6 checkout, payment, reservation and job suites ran unchanged.
+
+- **`features/orders/placement.ts`** (`createOrderFromLines`) now creates the order row, items, stock handling, first payment attempt, event and confirmation e-mail inside the caller's transaction; **`placement-rules.ts`** holds the pure validation (lines, amounts, COD fee, store credit, parent links per kind, stock handling) and the tax rule. `features/checkout/service.ts` keeps cart locking, ownership, the live-order resume, the quote check and the guest token, and calls the shared path with `kind: "STANDARD"` and `stock: "manage"`; cart conversion now follows the placement result (`CONFIRMED`) rather than the payment method, which is the same condition today.
+- **Migration `20261102180000_phase8_foundation`** (with `rollback.sql`): `orders.kind` (`order_kind`), `exchange_of_order_id` (self FK, Restrict, index), `commission_request_id` + `instalment` (`instalment_kind`; unique pair, NULLs distinct; the FK to `custom_artwork_requests` arrives with that table in step 8.5), `products.kind` (`product_kind`), `PaymentMethod.STORE_CREDIT`, `CancellationReason.EXCHANGE_LAPSED` / `COMMISSION_CANCELLED`. CHECKs `orders_replacement_has_parent`, `orders_instalment_has_commission`, `orders_parent_links_match_kind`, `orders_store_credit_is_free`. The store-credit CHECK compares `payment_method::text`, because an enum value added in the same transaction cannot be referenced as a literal; the same technique applies to later migrations that add values.
+- **Storefront reads** (`features/catalog/data.ts`, `features/wishlist/data.ts`) filter `kind = CATALOGUE` alongside `status = ACTIVE`, including the raw listing/search and technique queries.
+- **Types and copy:** `CheckoutPaymentMethod` (`Exclude<PaymentMethod, "STORE_CREDIT">`) for what customers choose; the order e-mails and the customer order view label `STORE_CREDIT` as settled by exchange credit.
+- **Tests:** unit (`placement-rules.test.ts`: every refusal, tax rule, initial status) and integration (`tests/integration/placement.test.ts`: COD, online, store-credit replacement, stock-free instalments with the unique pair, refusals before any write, the four CHECKs and defaults, commission products excluded from every storefront read).
+- **Errata applied:** E3 (four migrations) stands; E1, E2, E5, E6, E7, E8 belong to later steps and remain in the readiness document.

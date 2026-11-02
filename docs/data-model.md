@@ -266,3 +266,16 @@ A time-limited hold on stock while an online payment is pending. Added in Phase 
 | `order_events`                | (existing) now append-only for the runtime role as well                                                                            | trigger and privileges                                                                                                                               |
 
 Enum additions: `OrderStatus` `PROCESSING`, `SHIPPED`, `DELIVERED`, `DELIVERY_FAILED`, `RETURNED`; `CancellationReason` `COD_REFUSED`, `DELIVERY_FAILED`; `OrderActor` `STAFF`; new `AuditOutcome`, `InventoryAdjustmentKind`, `UploadStatus`. A `users_keep_one_admin` trigger refuses to demote or delete the last `ADMIN`. `rollback.sql` drops the tables, triggers and functions and re-grants `order_events`; enum values cannot be dropped and are left in place.
+
+## Phase 8 additions, step 8.0 (migration `20261102180000_phase8_foundation`)
+
+| Change                                                                              | Purpose                                                                                                                                                     |
+| ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `orders.kind` (`order_kind`: STANDARD, EXCHANGE_REPLACEMENT, COMMISSION_INSTALMENT) | Replacement and instalment orders are ordinary orders with a kind; default STANDARD for every existing row.                                                 |
+| `orders.exchange_of_order_id` (self FK, Restrict)                                   | A replacement's original order; CHECK `orders_replacement_has_parent`, `orders_parent_links_match_kind`.                                                    |
+| `orders.commission_request_id`, `orders.instalment` (`instalment_kind`)             | A commission's deposit and balance orders; unique pair; CHECK `orders_instalment_has_commission`. The FK follows with `custom_artwork_requests` (step 8.5). |
+| `payment_method` value `STORE_CREDIT`                                               | Zero-due orders settled by exchange credit; CHECK `orders_store_credit_is_free` (`total_in_paise = 0`); never a payment attempt.                            |
+| `cancellation_reason` values `EXCHANGE_LAPSED`, `COMMISSION_CANCELLED`              | Used by steps 8.3 and 8.8.                                                                                                                                  |
+| `products.kind` (`product_kind`: CATALOGUE, COMMISSION)                             | Commission products carry instalment lines only and never appear in storefront reads (`kind = CATALOGUE` filter).                                           |
+
+Design: [phase-8-returns-custom-artwork.md](phase-8-returns-custom-artwork.md) §7.1 and §16.

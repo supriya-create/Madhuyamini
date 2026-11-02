@@ -14,7 +14,7 @@ export async function findWishlistProductIds(
 
 export function findWishlistProductIdsOrdered(userId: string) {
   return db.wishlistItem.findMany({
-    where: { userId, product: { status: "ACTIVE" } },
+    where: { userId, product: { status: "ACTIVE", kind: "CATALOGUE" } },
     select: { productId: true },
     orderBy: { createdAt: "desc" },
   });
@@ -35,7 +35,7 @@ export function removeWishlistItem(userId: string, productId: string) {
 
 export function isActiveProduct(productId: string) {
   return db.product.findFirst({
-    where: { id: productId, status: "ACTIVE" },
+    where: { id: productId, status: "ACTIVE", kind: "CATALOGUE" },
     select: { id: true },
   });
 }
