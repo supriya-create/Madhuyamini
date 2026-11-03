@@ -37,7 +37,7 @@ Changes are recorded in the "Approval" column below by editing this file in a do
 | D8.16 | Quotation validity and revisions                |   C   | During implementation (8.6); mandatory before launch                                | Approved as recommended (owner, 2 Nov 2026) |
 | D8.17 | Carrier tracking synchronisation                |   D   | Not in Phase 8 unless approved; never blocks                                        | Approved as recommended (owner, 2 Nov 2026) |
 | D8.18 | Guest commission requests                       |   E   | Blocks the start of step 8.5 if changed; not needed for launch if default stands    | Approved as recommended (owner, 2 Nov 2026) |
-| D8.19 | Refund timing of repaired and quarantined units |   A   | Blocks the start of step 8.2 sub-step 7 (held units) only; the rest of 8.2 proceeds | Pending owner approval                      |
+| D8.19 | Refund timing of repaired and quarantined units |   A   | Blocks the start of step 8.2 sub-step 7 (held units) only; the rest of 8.2 proceeds | Pending owner approval (revised 3 Nov 2026) |
 
 "Blocks the start of step X" means the default and the alternatives lead to different data models or transaction designs, so the step cannot be coded safely before the owner chooses. "During implementation" means the code supports the default and the alternatives through policy values or flags, so the step can be built while the owner decides, and the chosen value is set before the step's acceptance test. "Mandatory before launch" means the rule is customer-facing or financial and must be final, and stated on the policy pages (Phase 9), before Razorpay live activation.
 
@@ -279,17 +279,17 @@ Changes are recorded in the "Approval" column below by editing this file in a do
 
 ---
 
-### D8.19 Refund timing of repaired and quarantined units (raised 3 November 2026 during the step 8.2 review)
+### D8.19 Refund timing of repaired and quarantined units (raised 3 November 2026 during the step 8.2 review; revised the same day with the bounded quarantine lifecycle)
 
 - **Why required:** the approved proposal (§4.3) refunds repaired and quarantined units at settlement, before the repair or the quarantine check has an outcome. A quarantined unit later written off cannot have its refund reversed, so the exposure is the shop's. Inventory is unaffected either way: held units are not stock until released by an audited restock.
-- **Recommended default (not approved):** refund repaired units at settlement, as proposed; hold the refund of quarantined units until their release decision, due within 7 days (engineering default): release to stock refunds the unit under the normal rules, a write-off after quarantine refunds it only for a fault reason, and a unit sent back to the customer is not refunded. The customer sees "held for checks; decision by <date>".
-- **Alternatives:** keep the proposal's behaviour (refund both at settlement); hold both repaired and quarantined units.
-- **Financial implications:** the proposal's behaviour pays before the shop knows whether a quarantined unit is acceptable; the recommendation delays only those units' money by at most the decision window. It also changes when D8.6's "every unit accepted" shipping rule is met (decision report, example 10).
-- **Customer experience:** under the recommendation, a quarantined unit's refund arrives a few days later with a stated date; everything else is unchanged.
-- **Security and operations:** a quarantine clock with an owner alert; release is an audited action keyed once.
-- **Dependencies:** step 8.2 implements both behaviours behind a policy switch (`heldUnits.refundQuarantineAtSettlement`), so the answer is a value.
-- **Classification:** during implementation (the switch exists either way); the value must be set before the step's acceptance test; **mandatory before production launch** (customer-facing timing).
-- **Exact approval required:** refund quarantined units at settlement, or on release within a stated number of days.
+- **Recommended default (not approved):** refund repaired units at settlement, as proposed; hold the refund of a quarantined unit until its outcome. The quarantine lifecycle is the same under either answer and is bounded: `HELD` from inspection with a due date at `quarantineDecisionDays` (7) and a hard deadline at `quarantineMaxDays` (14); ADMIN resolves it as released (restock; accepted), written off (accepted only for a fault reason or by recorded ADMIN choice) or sent back (not accepted); at the due date the unit becomes `OVERDUE` with one owner alert per day; at the deadline the job resolves it as `TIMED_OUT`: deemed accepted, written off with reason `QUARANTINE_TIMEOUT`, refunded under the derived key, the customer e-mailed. Under the recommended answer the refund follows the outcome (release or timeout pays; a non-fault write-off and a send-back do not); the request's other accepted units are refunded at settlement; the original shipping charge is refunded at the first settlement where D8.6's condition can be decided, so it waits only while a held unit is the deciding factor. The customer sees "1 unit held for checks; decision by <date>", then "still being checked; a decision is due by <deadline>".
+- **Alternatives:** keep the proposal's behaviour (refund both at settlement; the lifecycle then governs the stock only); hold both repaired and quarantined units; a different due date or deadline; a timeout that favours the shop (no refund at the deadline), which is not recommended because it would let the shop's own delay cost the customer.
+- **Financial implications:** the proposal's behaviour pays before the shop knows whether a quarantined unit is acceptable; the recommendation delays only that unit's money, by at most 14 days, and never leaves it undecided. It also changes when D8.6's "every unit accepted" shipping rule is met (decision report, example 10).
+- **Customer experience:** under the recommendation, a quarantined unit's refund arrives within 14 days at the latest with stated dates; everything else is unchanged.
+- **Security and operations:** two clocks on the unit with owner alerts; release, write-off and send-back are audited actions keyed once; the timeout is a system action with its own audit row.
+- **Dependencies:** step 8.2 implements both behaviours behind a policy switch (`heldUnits.refundQuarantineAtSettlement`) with `quarantineDecisionDays` and `quarantineMaxDays`, so the answer is a set of values.
+- **Classification:** during implementation (the switch exists either way); the values must be set before the step's acceptance test; **mandatory before production launch** (customer-facing timing).
+- **Exact approval required:** `heldUnits.refundQuarantineAtSettlement` (recommended `false`), `quarantineDecisionDays` (recommended 7), `quarantineMaxDays` (recommended 14), and the timeout outcome "deemed accepted and written off" (recommended).
 
 ## Decisions that are not business decisions
 
