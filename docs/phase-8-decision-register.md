@@ -17,26 +17,27 @@ Changes are recorded in the "Approval" column below by editing this file in a do
 
 ## Summary
 
-| ID    | Decision                               | Group | Classification                                                                   | Approval                                    |
-| ----- | -------------------------------------- | :---: | -------------------------------------------------------------------------------- | ------------------------------------------- |
-| D8.1  | Return window                          |   A   | During implementation (value); mandatory before launch                           | Approved as recommended (owner, 2 Nov 2026) |
-| D8.2  | Non-returnable categories              |   A   | During implementation (value); mandatory before launch                           | Approved as recommended (owner, 2 Nov 2026) |
-| D8.3  | Guest returns                          |   E   | Blocks the start of step 8.1 if changed; not needed for launch if default stands | Approved as recommended (owner, 2 Nov 2026) |
-| D8.4  | Exchange eligibility and stock holding |   B   | Blocks the start of step 8.3                                                     | Approved as recommended (owner, 2 Nov 2026) |
-| D8.5  | Return shipping cost responsibility    |   D   | During implementation (8.2); mandatory before launch                             | Approved as recommended (owner, 2 Nov 2026) |
-| D8.6  | Refund of the original shipping charge |   A   | During implementation (8.2); mandatory before launch                             | Approved as recommended (owner, 2 Nov 2026) |
-| D8.7  | Damage deduction ceiling and evidence  |   A   | During implementation (8.2); mandatory before launch                             | Approved as recommended (owner, 2 Nov 2026) |
-| D8.8  | COD refund method                      |   E   | Blocks the start of step 8.2; mandatory before launch                            | Approved as recommended (owner, 2 Nov 2026) |
-| D8.9  | Return parcel lost in transit          |   A   | During implementation (8.4); mandatory before launch                             | Approved as recommended (owner, 2 Nov 2026) |
-| D8.10 | Shipping on replacement orders         |   D   | During implementation (8.3); mandatory before launch                             | Approved as recommended (owner, 2 Nov 2026) |
-| D8.11 | Commission payment methods and deposit |   C   | Blocks the start of step 8.6; mandatory before launch                            | Approved as recommended (owner, 2 Nov 2026) |
-| D8.12 | Artist assignment and commission model |   C   | During implementation (8.5); not needed for launch                               | Approved as recommended (owner, 2 Nov 2026) |
-| D8.13 | Quotation tax and invoice lines        |   C   | During implementation (8.6); mandatory before launch                             | Approved as recommended (owner, 2 Nov 2026) |
-| D8.14 | Commission cancellation rules          |   C   | During implementation (8.8); mandatory before launch                             | Approved as recommended (owner, 2 Nov 2026) |
-| D8.15 | Commission returns                     |   C   | During implementation (8.8); mandatory before launch                             | Approved as recommended (owner, 2 Nov 2026) |
-| D8.16 | Quotation validity and revisions       |   C   | During implementation (8.6); mandatory before launch                             | Approved as recommended (owner, 2 Nov 2026) |
-| D8.17 | Carrier tracking synchronisation       |   D   | Not in Phase 8 unless approved; never blocks                                     | Approved as recommended (owner, 2 Nov 2026) |
-| D8.18 | Guest commission requests              |   E   | Blocks the start of step 8.5 if changed; not needed for launch if default stands | Approved as recommended (owner, 2 Nov 2026) |
+| ID    | Decision                                        | Group | Classification                                                                      | Approval                                    |
+| ----- | ----------------------------------------------- | :---: | ----------------------------------------------------------------------------------- | ------------------------------------------- |
+| D8.1  | Return window                                   |   A   | During implementation (value); mandatory before launch                              | Approved as recommended (owner, 2 Nov 2026) |
+| D8.2  | Non-returnable categories                       |   A   | During implementation (value); mandatory before launch                              | Approved as recommended (owner, 2 Nov 2026) |
+| D8.3  | Guest returns                                   |   E   | Blocks the start of step 8.1 if changed; not needed for launch if default stands    | Approved as recommended (owner, 2 Nov 2026) |
+| D8.4  | Exchange eligibility and stock holding          |   B   | Blocks the start of step 8.3                                                        | Approved as recommended (owner, 2 Nov 2026) |
+| D8.5  | Return shipping cost responsibility             |   D   | During implementation (8.2); mandatory before launch                                | Approved as recommended (owner, 2 Nov 2026) |
+| D8.6  | Refund of the original shipping charge          |   A   | During implementation (8.2); mandatory before launch                                | Approved as recommended (owner, 2 Nov 2026) |
+| D8.7  | Damage deduction ceiling and evidence           |   A   | During implementation (8.2); mandatory before launch                                | Approved as recommended (owner, 2 Nov 2026) |
+| D8.8  | COD refund method                               |   E   | Blocks the start of step 8.2; mandatory before launch                               | Approved as recommended (owner, 2 Nov 2026) |
+| D8.9  | Return parcel lost in transit                   |   A   | During implementation (8.4); mandatory before launch                                | Approved as recommended (owner, 2 Nov 2026) |
+| D8.10 | Shipping on replacement orders                  |   D   | During implementation (8.3); mandatory before launch                                | Approved as recommended (owner, 2 Nov 2026) |
+| D8.11 | Commission payment methods and deposit          |   C   | Blocks the start of step 8.6; mandatory before launch                               | Approved as recommended (owner, 2 Nov 2026) |
+| D8.12 | Artist assignment and commission model          |   C   | During implementation (8.5); not needed for launch                                  | Approved as recommended (owner, 2 Nov 2026) |
+| D8.13 | Quotation tax and invoice lines                 |   C   | During implementation (8.6); mandatory before launch                                | Approved as recommended (owner, 2 Nov 2026) |
+| D8.14 | Commission cancellation rules                   |   C   | During implementation (8.8); mandatory before launch                                | Approved as recommended (owner, 2 Nov 2026) |
+| D8.15 | Commission returns                              |   C   | During implementation (8.8); mandatory before launch                                | Approved as recommended (owner, 2 Nov 2026) |
+| D8.16 | Quotation validity and revisions                |   C   | During implementation (8.6); mandatory before launch                                | Approved as recommended (owner, 2 Nov 2026) |
+| D8.17 | Carrier tracking synchronisation                |   D   | Not in Phase 8 unless approved; never blocks                                        | Approved as recommended (owner, 2 Nov 2026) |
+| D8.18 | Guest commission requests                       |   E   | Blocks the start of step 8.5 if changed; not needed for launch if default stands    | Approved as recommended (owner, 2 Nov 2026) |
+| D8.19 | Refund timing of repaired and quarantined units |   A   | Blocks the start of step 8.2 sub-step 7 (held units) only; the rest of 8.2 proceeds | Pending owner approval                      |
 
 "Blocks the start of step X" means the default and the alternatives lead to different data models or transaction designs, so the step cannot be coded safely before the owner chooses. "During implementation" means the code supports the default and the alternatives through policy values or flags, so the step can be built while the owner decides, and the chosen value is set before the step's acceptance test. "Mandatory before launch" means the rule is customer-facing or financial and must be final, and stated on the policy pages (Phase 9), before Razorpay live activation.
 
@@ -277,6 +278,18 @@ Changes are recorded in the "Approval" column below by editing this file in a do
 - **Exact approval required:** bank transfer, UPI, or both; whether store credit must be designed instead; the retention period for beneficiary details (engineering default 30 days after payment).
 
 ---
+
+### D8.19 Refund timing of repaired and quarantined units (raised 3 November 2026 during the step 8.2 review)
+
+- **Why required:** the approved proposal (§4.3) refunds repaired and quarantined units at settlement, before the repair or the quarantine check has an outcome. A quarantined unit later written off cannot have its refund reversed, so the exposure is the shop's. Inventory is unaffected either way: held units are not stock until released by an audited restock.
+- **Recommended default (not approved):** refund repaired units at settlement, as proposed; hold the refund of quarantined units until their release decision, due within 7 days (engineering default): release to stock refunds the unit under the normal rules, a write-off after quarantine refunds it only for a fault reason, and a unit sent back to the customer is not refunded. The customer sees "held for checks; decision by <date>".
+- **Alternatives:** keep the proposal's behaviour (refund both at settlement); hold both repaired and quarantined units.
+- **Financial implications:** the proposal's behaviour pays before the shop knows whether a quarantined unit is acceptable; the recommendation delays only those units' money by at most the decision window. It also changes when D8.6's "every unit accepted" shipping rule is met (decision report, example 10).
+- **Customer experience:** under the recommendation, a quarantined unit's refund arrives a few days later with a stated date; everything else is unchanged.
+- **Security and operations:** a quarantine clock with an owner alert; release is an audited action keyed once.
+- **Dependencies:** step 8.2 implements both behaviours behind a policy switch (`heldUnits.refundQuarantineAtSettlement`), so the answer is a value.
+- **Classification:** during implementation (the switch exists either way); the value must be set before the step's acceptance test; **mandatory before production launch** (customer-facing timing).
+- **Exact approval required:** refund quarantined units at settlement, or on release within a stated number of days.
 
 ## Decisions that are not business decisions
 
