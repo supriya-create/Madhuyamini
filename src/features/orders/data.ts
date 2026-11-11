@@ -214,9 +214,18 @@ export function recordOrderEvent(
   });
 }
 
+/**
+ * Issues a token. `createdAt` comes from the caller's clock, like the order
+ * row it belongs to, so `expires_at > created_at` holds for any injected clock.
+ */
 export function createAccessToken(
   tx: Tx,
-  input: { orderId: string; tokenHash: string; expiresAt: Date },
+  input: {
+    orderId: string;
+    tokenHash: string;
+    expiresAt: Date;
+    createdAt: Date;
+  },
 ) {
   return tx.orderAccessToken.create({ data: input, select: { id: true } });
 }

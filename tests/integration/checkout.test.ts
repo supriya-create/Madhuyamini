@@ -768,3 +768,68 @@ describe("who can see an order", () => {
     ).rejects.toBeInstanceOf(OrderNotCancellableError);
   });
 });
+
+describe("guest access tokens and the clock", () => {
+  const day = 24 * 60 * 60 * 1000;
+  const ttl = checkoutPolicy.guestAccess.tokenTtlDays * day;
+
+  // Regression. Until 12 November 2026 a token's `created_at` took the
+  // database default while its `expires_at` came from the injected clock, so
+  // any clock pinned more than `tokenTtlDays` in the past tripped the CHECK
+  // `order_access_tokens_expiry_after_issue`. The clock below is always that
+  // far in the past, so the test is deterministic on any date.
+  it("issues and rotates tokens on the caller's clock, with expiry measured from issue", async () => {
+    const { variant } = await catalog(99_900);
+    const shopper = guest();
+    await cartWith(shopper, variant.id, 1);
+    const now = new Date("2026-01-01T10:00:00Z");
+    const outcome = await placeOrder(await placeInput(shopper, "COD", { now }));
+    if (outcome.kind !== "placed" || !outcome.guestToken)
+      throw new Error("no token");
+
+    const issued = await testDb.orderAccessToken.findUniqueOrThrow({
+      where: { tokenHash: hashOrderAccessToken(outcome.guestToken) },
+    });
+    expect(issued.createdAt).toEqual(now);
+    expect(issued.expiresAt.getTime() - issued.createdAt.getTime()).toBe(ttl);
+    const order = await testDb.order.findUniqueOrThrow({
+      where: { id: outcome.orderId },
+      select: { createdAt: true },
+    });
+    expect(order.createdAt).toEqual(issued.createdAt);
+
+    // Expiry semantics are unchanged: usable until, and not at, `expiresAt`.
+    const access = {
+      kind: "guest" as const,
+      tokenHash: hashOrderAccessToken(outcome.guestToken),
+    };
+    expect(
+      await getOrderView(
+        access,
+        outcome.orderId,
+        new Date(issued.expiresAt.getTime() - 1),
+      ),
+    ).not.toBeNull();
+    expect(
+      await getOrderView(access, outcome.orderId, issued.expiresAt),
+    ).toBeNull();
+
+    // Rotation through tracking stamps the new token and the revocation with
+    // the same clock.
+    const later = new Date(now.getTime() + day);
+    const tracked = await trackOrder(
+      { orderNumber: outcome.orderNumber, email: "guest@example.com" },
+      later,
+    );
+    if (!tracked) throw new Error("not tracked");
+    const rotated = await testDb.orderAccessToken.findUniqueOrThrow({
+      where: { tokenHash: hashOrderAccessToken(tracked.token) },
+    });
+    expect(rotated.createdAt).toEqual(later);
+    expect(rotated.expiresAt.getTime() - rotated.createdAt.getTime()).toBe(ttl);
+    const revoked = await testDb.orderAccessToken.findUniqueOrThrow({
+      where: { id: issued.id },
+    });
+    expect(revoked.revokedAt).toEqual(later);
+  });
+});

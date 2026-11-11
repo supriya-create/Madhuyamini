@@ -257,6 +257,7 @@ async function placeInTransaction(
       expiresAt: new Date(
         now.getTime() + daysToMs(policy.guestAccess.tokenTtlDays),
       ),
+      createdAt: now,
     });
   }
 

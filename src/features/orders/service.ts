@@ -159,6 +159,7 @@ export async function trackOrder(
       expiresAt: new Date(
         now.getTime() + daysToMs(policy.guestAccess.tokenTtlDays),
       ),
+      createdAt: now,
     });
     await data.revokeOtherAccessTokens(tx, order.id, created.id, now);
     await data.recordOrderEvent(tx, {

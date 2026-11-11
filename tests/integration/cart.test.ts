@@ -323,8 +323,10 @@ describe("updating and removing lines", () => {
   it("removes a line and refreshes activity", async () => {
     const { variant } = await catalog();
     const context = guest();
-    const t0 = new Date("2026-11-01T10:00:00Z");
-    const t1 = new Date("2026-11-10T10:00:00Z");
+    // getCartView and getCartItemCount read with the request clock, so the
+    // injected clock must agree with it or the cart looks expired one day.
+    const t0 = new Date();
+    const t1 = new Date(t0.getTime() + 9 * 24 * 60 * 60 * 1000);
     await addToCart(context, { variantId: variant.id, quantity: 1 }, t0);
     const line = (await getCartView(context)).lines[0]!;
 
