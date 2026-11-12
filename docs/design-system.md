@@ -194,5 +194,5 @@ All ornament is decorative (`aria-hidden="true"`) and built as inline SVG or CSS
 - **Component styles** live in CSS Modules outside those layers, so they always override base styles without specificity battles.
 - **Modules use tokens only.** No raw hex values and no unexplained magic numbers. Exceptions get a comment.
 - **Layout:** logical properties throughout (`margin-inline`, `padding-block`).
-- **Scrolling:** `scroll-padding-top` is set to the sticky header's height.
+- **Scrolling:** `scroll-padding-top` is set to the sticky header's height. `scroll-behavior: smooth` applies to in-page scrolling only: the root `<html>` carries `data-scroll-behavior="smooth"`, which Next.js 16 needs to scroll a navigation to the top instantly (without it the new page slides up from the old scroll position under the sticky header).
 - **No utility-class framework.** Global utilities are limited to `.visually-hidden` and the container.

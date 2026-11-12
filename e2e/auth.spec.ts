@@ -6,6 +6,7 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
 import { firstLink, waitForEmail } from "../tests/support/mailbox";
+import { uniqueEmail } from "./accounts";
 import { expectNoAxeViolations, isMobileProject, tabKey } from "./support";
 
 /**
@@ -27,10 +28,6 @@ function fakeAddress(): string {
 test.beforeEach(async ({ context }) => {
   await context.setExtraHTTPHeaders({ "x-forwarded-for": fakeAddress() });
 });
-
-function uniqueEmail(label: string, testInfo: { project: { name: string } }) {
-  return `${label}-${testInfo.project.name}-${Date.now()}@example.com`;
-}
 
 async function register(page: Page, email: string, name = "Asha Devi") {
   await page.goto("/register");

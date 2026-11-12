@@ -24,10 +24,13 @@ export async function expectNoAxeViolations(page: Page, context?: string) {
   // it: a page that never sets one still fails here, with a clear message.
   await expect(page).toHaveTitle(/\S/);
   // Target sizes depend on the final layout: wait for web fonts, and start
-  // from the top so the sticky header overlaps nothing being measured.
+  // from the top so the sticky header overlaps nothing being measured. The
+  // scroll must be instant: the stylesheet sets `scroll-behavior: smooth`,
+  // and an animated scroll would leave the header sliding over the page
+  // while axe measures it.
   await page.evaluate(async () => {
     await document.fonts.ready;
-    window.scrollTo(0, 0);
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
   });
   const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
   const summary = results.violations.map((violation) => ({
@@ -36,6 +39,12 @@ export async function expectNoAxeViolations(page: Page, context?: string) {
     targets: violation.nodes.map((node) => node.target.join(" ")),
     // Why each node failed, so a report is actionable without re-running.
     details: violation.nodes.map((node) => node.failureSummary ?? ""),
+    // The neighbours a check blamed (for target-size, whatever overlapped).
+    related: violation.nodes.map((node) =>
+      [...node.any, ...node.all, ...node.none].flatMap((check) =>
+        (check.relatedNodes ?? []).map((related) => related.target.join(" ")),
+      ),
+    ),
   }));
   expect(
     summary,

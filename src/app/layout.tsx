@@ -31,7 +31,14 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en-IN" className={`${serif.variable} ${sans.variable}`}>
+    // globals.css sets `scroll-behavior: smooth`; the attribute tells Next.js
+    // 16 to suspend it while it scrolls a navigation to the top, so a new page
+    // opens at its top instead of sliding up from where the last one was.
+    <html
+      lang="en-IN"
+      className={`${serif.variable} ${sans.variable}`}
+      data-scroll-behavior="smooth"
+    >
       <body>{children}</body>
     </html>
   );

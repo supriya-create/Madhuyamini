@@ -11,11 +11,16 @@ export function fakeAddress(): string {
   return `10.${octet()}.${octet()}.${octet()}`;
 }
 
+/**
+ * Distinct per project, run and repeat: with `--repeat-each`, two repeats of
+ * one test can start within the same millisecond, and sharing an account
+ * (and so a cart) would send both off course.
+ */
 export function uniqueEmail(
   label: string,
-  testInfo: { project: { name: string } },
+  testInfo: { project: { name: string }; repeatEachIndex: number },
 ) {
-  return `${label}-${testInfo.project.name}-${Date.now()}@example.com`;
+  return `${label}-${testInfo.project.name}-${Date.now()}-${testInfo.repeatEachIndex}@example.com`;
 }
 
 export async function register(page: Page, email: string, name = "Asha Devi") {
