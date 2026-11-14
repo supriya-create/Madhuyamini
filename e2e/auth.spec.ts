@@ -290,6 +290,153 @@ test.describe("account area", () => {
   });
 });
 
+/** The sign-in form itself (the header carries search forms too). */
+function signInForm(page: Page) {
+  return page.locator("form").filter({ has: page.locator("#sign-in-email") });
+}
+
+/**
+ * The browser-side checks need React mounted. The show-password toggle is
+ * client state, so once a click flips the input type the page is hydrated;
+ * the toggle is flipped back afterwards.
+ */
+async function waitForSignInHydration(page: Page) {
+  const input = page.getByLabel("Password", { exact: true });
+  await expect(async () => {
+    await page.getByRole("button", { name: "Show password" }).click();
+    await expect(input).toHaveAttribute("type", "text", { timeout: 500 });
+  }).toPass();
+  await page.getByRole("button", { name: "Hide password" }).click();
+  await expect(input).toHaveAttribute("type", "password");
+}
+
+test.describe("sign-in page", () => {
+  test("catches empty and malformed entries before anything is sent", async ({
+    page,
+  }) => {
+    await page.goto("/login");
+    await waitForSignInHydration(page);
+    const posts: string[] = [];
+    page.on("request", (request) => {
+      if (request.method() === "POST") posts.push(request.url());
+    });
+
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page.getByText("Enter your email address")).toBeVisible();
+    await expect(page.getByText("Enter your password")).toBeVisible();
+    await expect(page.getByLabel("Email address")).toBeFocused();
+    await expect(page).toHaveURL(/\/login$/);
+
+    await page.getByLabel("Email address").fill("asha@");
+    await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+    await expect(page.getByText("Enter your password")).toHaveCount(0);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page.getByText("Enter a valid email address")).toBeVisible();
+    await expect(page).toHaveURL(/\/login$/);
+    expect(posts).toEqual([]);
+
+    // Correcting the field clears its message straight away.
+    await page.getByLabel("Email address").fill("asha@example.com");
+    await expect(page.getByText("Enter a valid email address")).toHaveCount(0);
+  });
+
+  test("shows a busy state while the sign-in request is in flight", async ({
+    page,
+  }, testInfo) => {
+    const email = uniqueEmail("busy", testInfo);
+    await register(page, email);
+    await page.goto("/login");
+    await waitForSignInHydration(page);
+    // Hold the action's POST so the pending state is observable.
+    await page.route(
+      (url) => url.pathname === "/login",
+      async (route) => {
+        if (route.request().method() === "POST") {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+        }
+        await route.continue();
+      },
+    );
+    await page.getByLabel("Email address").fill(email);
+    await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+    await page.getByRole("button", { name: "Sign in" }).click();
+
+    const busy = page.getByRole("button", { name: "Signing in…" });
+    await expect(busy).toBeVisible();
+    await expect(busy).toBeDisabled();
+    await expect(busy).toHaveAttribute("aria-busy", "true");
+    await expect(page).toHaveURL(/\/account$/);
+  });
+
+  test("links to the password reset and to registration", async ({ page }) => {
+    await page.goto("/login");
+    await page.getByRole("link", { name: "Forgotten your password?" }).click();
+    await expect(page).toHaveURL(/\/forgot-password$/);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+      "Reset your password",
+    );
+
+    await page.goto("/login");
+    await page.getByRole("link", { name: "Create an account" }).click();
+    await expect(page).toHaveURL(/\/register$/);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+      "Create an account",
+    );
+  });
+
+  test("ignores an off-site return path and sends a signed-in visitor on", async ({
+    page,
+  }, testInfo) => {
+    const email = uniqueEmail("onward", testInfo);
+    await register(page, email);
+
+    await page.goto("/login?next=https%3A%2F%2Fevil.example%2F");
+    await page.getByLabel("Email address").fill(email);
+    await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    // Already signed in: the page never renders, the visitor is sent on.
+    await page.goto("/login");
+    await expect(page).toHaveURL(/\/account$/);
+    await page.goto("/login?next=%2Faccount%2Faddresses");
+    await expect(page).toHaveURL(/\/account\/addresses$/);
+    await page.goto("/login?next=//evil.example");
+    await expect(page).toHaveURL(/\/account$/);
+  });
+
+  test("fits a small screen with comfortable targets and the form in view", async ({
+    page,
+  }, testInfo) => {
+    test.skip(!isMobileProject(testInfo), "Mobile projects only");
+    await page.goto("/login");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+      "Welcome back",
+    );
+    const overflow = await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(0);
+
+    const viewport = page.viewportSize();
+    expect(viewport).not.toBeNull();
+    const form = await signInForm(page).boundingBox();
+    expect(form?.y ?? Number.POSITIVE_INFINITY).toBeLessThan(
+      viewport?.height ?? 0,
+    );
+    for (const control of [
+      page.getByLabel("Email address"),
+      page.getByLabel("Password", { exact: true }),
+      page.getByRole("button", { name: "Sign in" }),
+    ]) {
+      const box = await control.boundingBox();
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
+  });
+});
+
 test.describe("accessibility and keyboard", () => {
   test("auth pages have no axe violations", async ({ page }) => {
     for (const path of [

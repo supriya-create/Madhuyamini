@@ -1,7 +1,11 @@
 "use client";
 
+import { Eye, EyeOff } from "lucide-react";
 import { useId, useState } from "react";
 import type { ComponentProps, ReactNode } from "react";
+
+import { Icon } from "@/components/ui/Icon";
+import { cx } from "@/lib/cx";
 
 import styles from "./Field.module.css";
 import passwordStyles from "./PasswordField.module.css";
@@ -15,6 +19,11 @@ type PasswordFieldProps = Omit<
   label: string;
   hint?: ReactNode;
   error?: string;
+  /**
+   * `default` places the toggle beside the input; `inset` places it inside
+   * the input's box with an eye icon. Both keep the same accessible name.
+   */
+  variant?: "default" | "inset";
 };
 
 /**
@@ -27,12 +36,14 @@ export function PasswordField({
   label,
   hint,
   error,
+  variant = "default",
   ...props
 }: PasswordFieldProps) {
   const [visible, setVisible] = useState(false);
   const toggleId = useId();
   const hintId = hint ? `${id}-hint` : undefined;
   const errorId = error ? `${id}-error` : undefined;
+  const inset = variant === "inset";
 
   return (
     <div className={styles.field}>
@@ -44,7 +55,9 @@ export function PasswordField({
           {hint}
         </p>
       ) : null}
-      <div className={passwordStyles.wrap}>
+      <div
+        className={cx(passwordStyles.wrap, inset && passwordStyles.insetWrap)}
+      >
         <input
           id={id}
           name={name}
@@ -53,18 +66,22 @@ export function PasswordField({
           aria-describedby={
             [hintId, errorId].filter(Boolean).join(" ") || undefined
           }
-          className={styles.input}
+          className={cx(styles.input, inset && passwordStyles.insetInput)}
           spellCheck={false}
           {...props}
         />
         <button
           type="button"
           id={toggleId}
-          className={passwordStyles.toggle}
+          className={cx(
+            passwordStyles.toggle,
+            inset && passwordStyles.insetToggle,
+          )}
           aria-pressed={visible}
           aria-controls={id}
           onClick={() => setVisible((current) => !current)}
         >
+          {inset ? <Icon icon={visible ? EyeOff : Eye} size={16} /> : null}
           {visible ? "Hide" : "Show"}
           <span className="visually-hidden"> password</span>
         </button>

@@ -76,4 +76,54 @@ describe("signInSchema", () => {
       signInSchema.safeParse({ email: "nope", password: "x" }).success,
     ).toBe(false);
   });
+
+  it("rejects empty and whitespace-only entries with the field messages", () => {
+    const empty = signInSchema.safeParse({ email: "", password: "" });
+    expect(empty.success).toBe(false);
+    if (!empty.success) {
+      // Zod reports every failed check; the first message per field is the
+      // one shown beside it.
+      const firstMessageFor = (field: string) =>
+        empty.error.issues.find((issue) => issue.path[0] === field)?.message;
+      expect(firstMessageFor("email")).toBe("Enter your email address");
+      expect(firstMessageFor("password")).toBe("Enter a password");
+    }
+    expect(
+      signInSchema.safeParse({ email: "   ", password: "x" }).success,
+    ).toBe(false);
+  });
+
+  it("normalises the email and keeps the optional return path as given", () => {
+    expect(
+      signInSchema.parse({
+        email: "  Asha@Example.COM ",
+        password: "x",
+        next: "/account/addresses",
+      }),
+    ).toEqual({
+      email: "asha@example.com",
+      password: "x",
+      next: "/account/addresses",
+    });
+  });
+
+  it("bounds the password without a minimum and refuses unknown keys", () => {
+    expect(
+      signInSchema.safeParse({ email: "a@example.com", password: "ab" })
+        .success,
+    ).toBe(true);
+    expect(
+      signInSchema.safeParse({
+        email: "a@example.com",
+        password: "p".repeat(129),
+      }).success,
+    ).toBe(false);
+    expect(
+      signInSchema.safeParse({
+        email: "a@example.com",
+        password: "x",
+        remember: "1",
+      }).success,
+    ).toBe(false);
+  });
 });

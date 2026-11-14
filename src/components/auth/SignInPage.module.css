@@ -1,0 +1,177 @@
+.page {
+  padding-block: var(--space-6) var(--section-padding);
+}
+
+.layout {
+  display: grid;
+  gap: var(--space-7);
+  max-width: 30rem;
+  margin-inline: auto;
+}
+
+/* ---- Form panel --------------------------------------------------------- */
+
+.panel {
+  display: grid;
+  gap: var(--space-5);
+  align-content: start;
+}
+
+.panelHeader {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+}
+
+/* The short divider is centred by default; here it sits with the heading. */
+.panelRule {
+  margin-inline: 0;
+}
+
+.title {
+  font-size: var(--text-3xl);
+}
+
+.intro {
+  max-width: var(--measure);
+  font-size: var(--text-lg);
+  color: var(--text-secondary);
+}
+
+.notice {
+  padding: var(--space-3) var(--space-4);
+  border-inline-start: 3px solid var(--color-leaf);
+  background-color: var(--color-cream);
+  font-weight: 500;
+}
+
+.notice[data-tone="warning"] {
+  border-inline-start-color: var(--color-warning);
+}
+
+/* ---- Brand panel: a Madhubani double border around a hatched band ------ */
+
+.brand {
+  position: relative;
+  order: 1; /* After the form on small screens; the form is why people came. */
+  padding: 0.75rem; /* Same band width as FramedPanel. */
+  border: 1px solid var(--ornament);
+}
+
+.brand::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-color: var(--ornament);
+  mask-image: var(--motif-hatch);
+  mask-size: 8px 8px;
+}
+
+/* Opaque, so the hatching shows only in the band between the two rules. */
+.brandInner {
+  position: relative;
+  display: grid;
+  gap: var(--space-4);
+  align-content: center;
+  height: 100%;
+  padding: var(--space-5);
+  border: 1px solid var(--ornament);
+  background-color: var(--surface);
+}
+
+.eyebrow {
+  color: var(--color-gold-text);
+}
+
+.wordmark {
+  font-family: var(--font-serif);
+  font-size: var(--text-3xl);
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: 0.01em;
+  color: var(--color-ink);
+}
+
+.rule {
+  width: 6rem;
+}
+
+.statement {
+  max-width: 36ch;
+  font-size: var(--text-lg);
+  color: var(--text-secondary);
+}
+
+.benefits {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-secondary);
+}
+
+.benefits li {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  padding-block: var(--space-3);
+  border-block-start: 1px solid var(--rule);
+}
+
+/* A small gold lozenge, the border-dot of a Madhubani frame, as the bullet. */
+.benefits li::before {
+  content: "";
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  background-color: var(--ornament);
+  transform: translateY(-0.1em) rotate(45deg);
+}
+
+/* ---- Responsive --------------------------------------------------------- */
+
+@media (min-width: 48em) {
+  .layout {
+    max-width: 36rem;
+  }
+
+  .panel {
+    padding: var(--space-6);
+    border: 1px solid var(--rule);
+    background-color: var(--color-ivory);
+  }
+}
+
+@media (min-width: 64em) {
+  .page {
+    padding-block-start: var(--space-8);
+  }
+
+  .layout {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+    gap: var(--space-8);
+    align-items: stretch;
+    max-width: 66rem;
+  }
+
+  .brand {
+    order: 0;
+  }
+
+  .brandInner {
+    gap: var(--space-5);
+    padding: var(--space-7);
+  }
+
+  /* Both columns stretch to one height; the form sits in the middle of its card. */
+  .panel {
+    align-content: center;
+    padding: var(--space-7);
+  }
+}
+
+@media (min-width: 80em) {
+  .layout {
+    gap: var(--space-9);
+  }
+}
