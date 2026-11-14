@@ -12,6 +12,17 @@ const withDb = (source: Record<string, string | undefined>) => ({
   ...source,
 });
 
+/** A preview deployment must name an isolated database (see "preview database isolation"). */
+const WEBHOOK_SECRET = "whsec-test";
+const PREVIEW_DATABASE_URL =
+  "postgresql://app:pw@preview-db.example:5432/madhuyamini_preview";
+const asPreview = (source: Record<string, string | undefined> = {}) =>
+  withDb({
+    SITE_ENV: "preview",
+    DATABASE_URL: PREVIEW_DATABASE_URL,
+    ...source,
+  });
+
 describe("parseEnv", () => {
   it("defaults to development on localhost when only the database is set", () => {
     const env = parseEnv(withDb({}));
@@ -25,7 +36,11 @@ describe("parseEnv", () => {
   });
 
   it("falls back to VERCEL_ENV when SITE_ENV is not set", () => {
-    expect(parseEnv(withDb({ VERCEL_ENV: "preview" })).siteEnv).toBe("preview");
+    expect(
+      parseEnv(
+        withDb({ VERCEL_ENV: "preview", DATABASE_URL: PREVIEW_DATABASE_URL }),
+      ).siteEnv,
+    ).toBe("preview");
   });
 
   it("prefers an explicit SITE_ENV over VERCEL_ENV", () => {
@@ -189,24 +204,114 @@ describe("database, auth and email settings", () => {
 });
 
 describe("payments, cron and notification settings", () => {
-  it("defaults to the fake gateway outside production and Razorpay in production", () => {
+  it("defaults to the fake gateway in development only; preview and production default to Razorpay", () => {
     expect(parseEnv(withDb({})).payments).toEqual({
       gateway: "fake",
       razorpay: null,
     });
+    expect(parseEnv(withDb({ SITE_ENV: "development" })).payments.gateway).toBe(
+      "fake",
+    );
+    // A Vercel preview (VERCEL_ENV=preview) never gets the fake gateway by accident.
+    expect(parseEnv(asPreview()).payments).toEqual({
+      gateway: "razorpay",
+      razorpay: null,
+    });
+    expect(
+      parseEnv(
+        withDb({ VERCEL_ENV: "preview", DATABASE_URL: PREVIEW_DATABASE_URL }),
+      ).payments.gateway,
+    ).toBe("razorpay");
     const production = parseEnv(
       withDb({
         SITE_ENV: "production",
         SITE_URL: "https://madhuyamini.example",
       }),
     );
-    // Missing keys do not fail parsing (and so not the build); they fail at use.
+    // Missing keys do not fail parsing (and so not the build); the server's
+    // startup check (payments/readiness.ts) refuses to run without them.
     expect(production.payments).toEqual({
       gateway: "razorpay",
       razorpay: null,
     });
     expect(production.cronSecret).toBeNull();
     expect(production.notifications.ownerEmail).toBeNull();
+  });
+
+  it("lets a preview opt in to the fake gateway only explicitly", () => {
+    expect(
+      parseEnv(asPreview({ PAYMENT_GATEWAY: "fake" })).payments.gateway,
+    ).toBe("fake");
+    expect(
+      parseEnv(asPreview({ PAYMENT_GATEWAY: "razorpay" })).payments.gateway,
+    ).toBe("razorpay");
+  });
+
+  it("refuses live credentials outside production and test credentials in production", () => {
+    for (const SITE_ENV of ["development", "preview"]) {
+      expect(() =>
+        parseEnv(
+          withDb({
+            SITE_ENV,
+            DATABASE_URL: PREVIEW_DATABASE_URL,
+            RAZORPAY_KEY_ID: "rzp_live_abc123",
+            RAZORPAY_KEY_SECRET: "live-secret",
+          }),
+        ),
+      ).toThrow(/RAZORPAY_KEY_ID must be a test key/);
+    }
+    expect(() =>
+      parseEnv(
+        withDb({
+          SITE_ENV: "production",
+          SITE_URL: "https://madhuyamini.example",
+          RAZORPAY_KEY_ID: "rzp_test_abc123",
+          RAZORPAY_KEY_SECRET: "test-secret",
+        }),
+      ),
+    ).toThrow(/RAZORPAY_KEY_ID must be a live key/);
+    expect(
+      parseEnv(
+        withDb({
+          SITE_ENV: "production",
+          SITE_URL: "https://madhuyamini.example",
+          RAZORPAY_KEY_ID: "rzp_live_abc123",
+          RAZORPAY_KEY_SECRET: "live-secret",
+          RAZORPAY_WEBHOOK_SECRET: WEBHOOK_SECRET,
+        }),
+      ).payments.razorpay?.keyId,
+    ).toBe("rzp_live_abc123");
+  });
+
+  it("rejects a key id that is not a Razorpay key id, and a key without its secret", () => {
+    expect(() =>
+      parseEnv(
+        withDb({ RAZORPAY_KEY_ID: "not-a-key", RAZORPAY_KEY_SECRET: "s" }),
+      ),
+    ).toThrow(/must be a Razorpay key id/);
+    expect(() => parseEnv(withDb({ RAZORPAY_KEY_ID: "rzp_test_abc" }))).toThrow(
+      /must be set together/,
+    );
+    expect(() =>
+      parseEnv(withDb({ RAZORPAY_KEY_SECRET: "orphan-secret" })),
+    ).toThrow(/must be set together/);
+  });
+
+  it("never echoes Razorpay values when refusing them", () => {
+    let message = "";
+    try {
+      parseEnv(
+        asPreview({
+          RAZORPAY_KEY_ID: "rzp_live_leakedid",
+          RAZORPAY_KEY_SECRET: "leaked-secret-value",
+        }),
+      );
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toMatch(/RAZORPAY_KEY_ID/);
+    expect(message).not.toContain("leakedid");
+    expect(message).not.toContain("leaked-secret-value");
   });
 
   it("refuses the fake gateway in production", () => {
@@ -221,10 +326,8 @@ describe("payments, cron and notification settings", () => {
     ).toThrow(/PAYMENT_GATEWAY/);
   });
 
-  it("assembles the Razorpay configuration only when both keys are present", () => {
-    expect(
-      parseEnv(withDb({ RAZORPAY_KEY_ID: "rzp_test_abc" })).payments.razorpay,
-    ).toBeNull();
+  it("assembles the Razorpay configuration from the key pair and the webhook secrets", () => {
+    expect(parseEnv(withDb({})).payments.razorpay).toBeNull();
     const env = parseEnv(
       withDb({
         PAYMENT_GATEWAY: "razorpay",
@@ -242,14 +345,103 @@ describe("payments, cron and notification settings", () => {
         webhookSecrets: ["whsec-now", "whsec-before"],
       },
     });
-    expect(
+    // The previous secret alone is not enough: the current one is required.
+    expect(() =>
       parseEnv(
         withDb({
           RAZORPAY_KEY_ID: "rzp_test_abc",
           RAZORPAY_KEY_SECRET: "topsecretkey",
+          RAZORPAY_WEBHOOK_SECRET_PREVIOUS: "whsec-before",
+        }),
+      ),
+    ).toThrow(/RAZORPAY_WEBHOOK_SECRET must be set together/);
+  });
+
+  it("requires the webhook secret whenever the keys are set, in every stage", () => {
+    const keys = {
+      RAZORPAY_KEY_ID: "rzp_test_abc",
+      RAZORPAY_KEY_SECRET: "topsecretkey",
+    };
+    expect(() =>
+      parseEnv(asPreview({ PAYMENT_GATEWAY: "razorpay", ...keys })),
+    ).toThrow(/RAZORPAY_WEBHOOK_SECRET must be set together/);
+    expect(() =>
+      parseEnv(withDb({ SITE_ENV: "development", ...keys })),
+    ).toThrow(/RAZORPAY_WEBHOOK_SECRET must be set together/);
+    // An empty value is unset.
+    expect(() =>
+      parseEnv(asPreview({ ...keys, RAZORPAY_WEBHOOK_SECRET: "" })),
+    ).toThrow(/RAZORPAY_WEBHOOK_SECRET must be set together/);
+    expect(() =>
+      parseEnv(
+        withDb({
+          SITE_ENV: "production",
+          SITE_URL: "https://madhuyamini.example",
+          RAZORPAY_KEY_ID: "rzp_live_abc123",
+          RAZORPAY_KEY_SECRET: "live-secret",
+          RAZORPAY_WEBHOOK_SECRET: "  ",
+        }),
+      ),
+    ).toThrow(/RAZORPAY_WEBHOOK_SECRET must be set together/);
+    // Complete configurations are accepted in every stage.
+    expect(
+      parseEnv(
+        withDb({
+          SITE_ENV: "development",
+          ...keys,
+          RAZORPAY_WEBHOOK_SECRET: WEBHOOK_SECRET,
         }),
       ).payments.razorpay?.webhookSecrets,
-    ).toEqual([]);
+    ).toEqual([WEBHOOK_SECRET]);
+    expect(
+      parseEnv(asPreview({ ...keys, RAZORPAY_WEBHOOK_SECRET: WEBHOOK_SECRET }))
+        .payments.razorpay?.webhookSecrets,
+    ).toEqual([WEBHOOK_SECRET]);
+    expect(
+      parseEnv(
+        withDb({
+          SITE_ENV: "production",
+          SITE_URL: "https://madhuyamini.example",
+          RAZORPAY_KEY_ID: "rzp_live_abc123",
+          RAZORPAY_KEY_SECRET: "live-secret",
+          RAZORPAY_WEBHOOK_SECRET: WEBHOOK_SECRET,
+        }),
+      ).payments,
+    ).toEqual({
+      gateway: "razorpay",
+      razorpay: {
+        keyId: "rzp_live_abc123",
+        keySecret: "live-secret",
+        webhookSecrets: [WEBHOOK_SECRET],
+      },
+    });
+    // No credentials at all: still accepted everywhere, online payment just unavailable.
+    expect(parseEnv(asPreview()).payments.razorpay).toBeNull();
+    expect(
+      parseEnv(
+        withDb({
+          SITE_ENV: "production",
+          SITE_URL: "https://madhuyamini.example",
+        }),
+      ).payments.razorpay,
+    ).toBeNull();
+  });
+
+  it("never echoes the keys when refusing an incomplete Razorpay configuration", () => {
+    let message = "";
+    try {
+      parseEnv(
+        withDb({
+          RAZORPAY_KEY_ID: "rzp_test_leakedid",
+          RAZORPAY_KEY_SECRET: "leaked-secret-value",
+        }),
+      );
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toMatch(/RAZORPAY_WEBHOOK_SECRET/);
+    expect(message).not.toContain("leakedid");
+    expect(message).not.toContain("leaked-secret-value");
   });
 
   it("validates the cron secret and the owner inbox without echoing them", () => {
@@ -273,6 +465,150 @@ describe("payments, cron and notification settings", () => {
     expect(() => parseEnv(withDb({ PAYMENT_GATEWAY: "paypal" }))).toThrow(
       /PAYMENT_GATEWAY/,
     );
+  });
+});
+
+describe("preview database isolation", () => {
+  const previewDb = (name: string, host = "preview-db.example") =>
+    `postgresql://app:pw@${host}:5432/${name}`;
+
+  it("accepts a _preview or _test database for a preview, with the fake gateway or Razorpay test keys", () => {
+    for (const DATABASE_URL of [
+      previewDb("madhuyamini_preview"),
+      previewDb("madhuyamini_test"),
+      previewDb("pr-42_preview"),
+    ]) {
+      expect(
+        parseEnv(
+          withDb({
+            SITE_ENV: "preview",
+            PAYMENT_GATEWAY: "fake",
+            DATABASE_URL,
+          }),
+        ).payments.gateway,
+      ).toBe("fake");
+      expect(
+        parseEnv(
+          withDb({
+            SITE_ENV: "preview",
+            DATABASE_URL,
+            RAZORPAY_KEY_ID: "rzp_test_abc",
+            RAZORPAY_KEY_SECRET: "s",
+            RAZORPAY_WEBHOOK_SECRET: WEBHOOK_SECRET,
+          }),
+        ).payments.gateway,
+      ).toBe("razorpay");
+    }
+  });
+
+  it("rejects a production-style database name for a preview, whichever gateway is selected", () => {
+    const names = ["madhuyamini", "madhuyamini_prod", "preview_madhuyamini"];
+    for (const name of names) {
+      expect(() =>
+        parseEnv(
+          withDb({
+            SITE_ENV: "preview",
+            PAYMENT_GATEWAY: "fake",
+            DATABASE_URL: previewDb(name),
+          }),
+        ),
+      ).toThrow(/DATABASE_URL must name an isolated database/);
+      expect(() =>
+        parseEnv(
+          withDb({
+            SITE_ENV: "preview",
+            DATABASE_URL: previewDb(name),
+            RAZORPAY_KEY_ID: "rzp_test_abc",
+            RAZORPAY_KEY_SECRET: "s",
+            RAZORPAY_WEBHOOK_SECRET: WEBHOOK_SECRET,
+          }),
+        ),
+      ).toThrow(/DATABASE_URL must name an isolated database/);
+      // Razorpay selected by default, no keys at all: still refused.
+      expect(() =>
+        parseEnv(
+          withDb({ SITE_ENV: "preview", DATABASE_URL: previewDb(name) }),
+        ),
+      ).toThrow(/DATABASE_URL must name an isolated database/);
+    }
+  });
+
+  it("applies to a Vercel preview detected through VERCEL_ENV", () => {
+    expect(() =>
+      parseEnv(
+        withDb({
+          VERCEL_ENV: "preview",
+          DATABASE_URL: previewDb("madhuyamini"),
+        }),
+      ),
+    ).toThrow(/isolated database/);
+    expect(
+      parseEnv(
+        withDb({
+          VERCEL_ENV: "preview",
+          DATABASE_URL: previewDb("madhuyamini_preview"),
+        }),
+      ).siteEnv,
+    ).toBe("preview");
+  });
+
+  it("rejects a malformed, database-less or missing DATABASE_URL for a preview", () => {
+    expect(() =>
+      parseEnv(withDb({ SITE_ENV: "preview", DATABASE_URL: "not a url" })),
+    ).toThrow(/DATABASE_URL/);
+    expect(() =>
+      parseEnv(
+        withDb({
+          SITE_ENV: "preview",
+          DATABASE_URL: "postgresql://app:pw@preview-db.example:5432/",
+        }),
+      ),
+    ).toThrow(/isolated database/);
+    expect(() => parseEnv({ SITE_ENV: "preview", BETTER_AUTH_SECRET })).toThrow(
+      /DATABASE_URL is required/,
+    );
+  });
+
+  it("leaves development and production unchanged", () => {
+    expect(parseEnv(withDb({})).siteEnv).toBe("development");
+    expect(parseEnv(withDb({ SITE_ENV: "development" })).payments.gateway).toBe(
+      "fake",
+    );
+    const production = parseEnv(
+      withDb({
+        SITE_ENV: "production",
+        SITE_URL: "https://madhuyamini.example",
+        RAZORPAY_KEY_ID: "rzp_live_abc123",
+        RAZORPAY_KEY_SECRET: "live-secret",
+        RAZORPAY_WEBHOOK_SECRET: WEBHOOK_SECRET,
+      }),
+    );
+    expect(production.siteEnv).toBe("production");
+    expect(production.payments.gateway).toBe("razorpay");
+  });
+
+  it("never reveals the connection string, user or password when refusing", () => {
+    let message = "";
+    try {
+      parseEnv(
+        withDb({
+          SITE_ENV: "preview",
+          DATABASE_URL:
+            "postgresql://dbuser:dbsecret@prod-db.example:5432/madhuyamini",
+        }),
+      );
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toMatch(/DATABASE_URL/);
+    for (const secret of [
+      "dbuser",
+      "dbsecret",
+      "prod-db.example",
+      "madhuyamini",
+    ]) {
+      expect(message).not.toContain(secret);
+    }
   });
 });
 

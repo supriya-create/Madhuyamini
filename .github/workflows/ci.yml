@@ -39,6 +39,8 @@ jobs:
       # Not a real secret: CI databases are throwaway. Production uses its own value.
       BETTER_AUTH_SECRET: ci-only-secret-value-that-is-at-least-32-chars
       EMAIL_TRANSPORT: file
+      # Explicit: the in-process gateway is never the default outside development.
+      PAYMENT_GATEWAY: fake
       # Throwaway Phase 7 values: the seeded staff accounts and TOTP key exist only in CI.
       SEED_ADMIN_PASSWORD: ci-only-staff-password
       ADMIN_TOTP_KEY: AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA

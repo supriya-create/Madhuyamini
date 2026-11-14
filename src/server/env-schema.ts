@@ -42,9 +42,18 @@ export interface ServerEnv {
   /** Whether registration and password changes consult Have I Been Pwned. */
   readonly passwordBreachCheck: "hibp" | "off";
   readonly payments: {
-    /** `fake` is refused in production; it backs development, tests and CI. */
+    /**
+     * `fake` is refused in production and is the default only in development;
+     * preview must opt in explicitly. Backs development, tests and CI.
+     */
     readonly gateway: PaymentGatewayKind;
-    /** Null until both key id and secret are set; checked when a payment is attempted, not at build. */
+    /**
+     * Null until both key id and secret are set; the schema then also
+     * requires the webhook secret, so a non-null configuration can always
+     * verify deliveries. A build never needs credentials; a production server
+     * refuses to start without them (`src/server/payments/readiness.ts`,
+     * called from instrumentation).
+     */
     readonly razorpay: RazorpayConfig | null;
   };
   /** Bearer secret the scheduled job routes require; null disables them. */
@@ -89,6 +98,33 @@ const totpKeySchema = z.string().refine((value) => {
     return false;
   }
 }, "must be 32 random bytes encoded as base64url");
+
+/**
+ * The database name in a connection string, or null when the URL does not
+ * parse or names no database. Only the name is ever used in messages.
+ */
+export function databaseNameOf(databaseUrl: string): string | null {
+  try {
+    const name = new URL(databaseUrl).pathname.replace(/^\/+/, "");
+    return name.length > 0 ? name : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Database names a preview deployment may use; production data never carries them. */
+const PREVIEW_DATABASE_SUFFIXES = ["_preview", "_test"] as const;
+
+export function isPreviewDatabaseName(name: string): boolean {
+  return PREVIEW_DATABASE_SUFFIXES.some((suffix) => name.endsWith(suffix));
+}
+
+/** The mode a Razorpay key id belongs to, or null when it is not a key id at all. */
+export function razorpayKeyMode(keyId: string): "test" | "live" | null {
+  const match = /^rzp_(test|live)_[A-Za-z0-9]+$/.exec(keyId);
+  if (!match) return null;
+  return match[1] === "live" ? "live" : "test";
+}
 
 /** Treat empty strings as unset, which is how most hosts represent a cleared variable. */
 const optionalString = z.preprocess(
@@ -148,7 +184,78 @@ const rawEnvSchema = z
     CLOUDINARY_UPLOAD_PRESET: optionalString,
   })
   .superRefine((value, ctx) => {
-    if (value.SITE_ENV !== "production") return;
+    // Razorpay credentials, in every environment: the key id tells the mode
+    // (rzp_test_ / rzp_live_), and live credentials belong to production only.
+    const production = value.SITE_ENV === "production";
+    const keyId = value.RAZORPAY_KEY_ID;
+    if (keyId !== undefined) {
+      const mode = razorpayKeyMode(keyId);
+      if (mode === null) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["RAZORPAY_KEY_ID"],
+          message:
+            "RAZORPAY_KEY_ID must be a Razorpay key id (rzp_test_… or rzp_live_…)",
+        });
+      } else if (production && mode !== "live") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["RAZORPAY_KEY_ID"],
+          message:
+            "RAZORPAY_KEY_ID must be a live key (rzp_live_…) in production",
+        });
+      } else if (!production && mode !== "test") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["RAZORPAY_KEY_ID"],
+          message:
+            "RAZORPAY_KEY_ID must be a test key (rzp_test_…) outside production; live credentials are refused in development and preview",
+        });
+      }
+    }
+    if ((keyId === undefined) !== (value.RAZORPAY_KEY_SECRET === undefined)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["RAZORPAY_KEY_ID"],
+        message:
+          "RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET must be set together (one without the other is a misconfiguration)",
+      });
+    }
+    // The keys make online checkout available; without the webhook secret
+    // every delivery would be rejected, so the three are one unit in every
+    // stage. Deployments without any credentials are untouched by this rule.
+    // `optionalString` trims, so a blank secret arrives as "" here.
+    if (
+      keyId !== undefined &&
+      value.RAZORPAY_KEY_SECRET !== undefined &&
+      !value.RAZORPAY_WEBHOOK_SECRET
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["RAZORPAY_WEBHOOK_SECRET"],
+        message:
+          "RAZORPAY_WEBHOOK_SECRET must be set together with the Razorpay keys (webhook deliveries cannot be verified without it)",
+      });
+    }
+
+    // A preview deployment (SITE_ENV or VERCEL_ENV) may only run against an
+    // isolated database, whatever the gateway: the fake gateway would mark
+    // real orders paid, and even Razorpay test mode would create real orders.
+    // The suffix is a configuration safeguard, not proof of identity; the
+    // URL itself must point at a separate database (docs/environments.md).
+    if (value.SITE_ENV === "preview") {
+      const name = databaseNameOf(value.DATABASE_URL);
+      if (name === null || !isPreviewDatabaseName(name)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["DATABASE_URL"],
+          message:
+            "DATABASE_URL must name an isolated database for a preview deployment (name ending in _preview or _test); previews never run against production data",
+        });
+      }
+    }
+
+    if (!production) return;
 
     // Production must use a real email service. The API key itself is checked
     // when the transport is first used, not here, so a build or preview
@@ -246,8 +353,13 @@ export function parseEnv(source: EnvSource): ServerEnv {
   const production = result.data.SITE_ENV === "production";
   const transport =
     result.data.EMAIL_TRANSPORT ?? (production ? "resend" : "file");
+  // The fake gateway is the default only on a developer's machine. Preview
+  // and production default to the real gateway; a preview that wants the
+  // in-process gateway must say so (PAYMENT_GATEWAY=fake), and production
+  // refuses it above.
   const gateway =
-    result.data.PAYMENT_GATEWAY ?? (production ? "razorpay" : "fake");
+    result.data.PAYMENT_GATEWAY ??
+    (result.data.SITE_ENV === "development" ? "fake" : "razorpay");
   const razorpay =
     result.data.RAZORPAY_KEY_ID && result.data.RAZORPAY_KEY_SECRET
       ? {

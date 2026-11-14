@@ -583,7 +583,7 @@ interface PaymentGateway {
 }
 ```
 
-Implementations: `razorpayGateway` (production/preview/manual testing) and `fakeGateway` (development, tests, CI) chosen by `PAYMENT_GATEWAY=razorpay|fake`; the env schema **refuses `fake` in production**, exactly as `EMAIL_TRANSPORT` refuses non-Resend there.
+Implementations: `razorpayGateway` (production/preview/manual testing) and `fakeGateway` (development, tests, CI) chosen by `PAYMENT_GATEWAY=razorpay|fake`; the env schema **refuses `fake` in production**, exactly as `EMAIL_TRANSPORT` refuses non-Resend there. Since the audit batch 2 (15 Nov 2026) the default is `fake` only when `SITE_ENV=development`; preview and production default to `razorpay`, the key id's mode must match the environment (`rzp_test_` outside production, `rzp_live_` in it), the id, the secret and the webhook secret must be set together in every stage, and a production server refuses to start without the key pair and a webhook secret (`src/server/payments/readiness.ts`, run from `src/instrumentation.ts`). The rules per environment are in [environments.md](environments.md).
 
 ---
 
@@ -670,7 +670,7 @@ Implementations: `razorpayGateway` (production/preview/manual testing) and `fake
 - **Ownership:** orders are read by `(id, userId)` for customers and through a valid access token for guests (§10.1); never by id alone. Account pages use `requireUser`; `proxy.ts` is unchanged (optimistic only).
 - **CSRF:** Server Actions are origin-checked by Next; the webhook route accepts POST without cookies; cron routes require the bearer secret and reject GET without it.
 - **Rate limits (new rules in `rate-limit-rules.ts`):** place order 5/10 min per identity and 20/10 min per IP; confirm payment 20/10 min per order; start attempt 5/15 min per order; order lookup 10/15 min per IP and 5/hour per email; webhook route 600/min per IP (defensive).
-- **Secrets:** `RAZORPAY_KEY_ID` (public), `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `RAZORPAY_WEBHOOK_SECRET_PREVIOUS?`, `CRON_SECRET`, `PAYMENT_GATEWAY`, `ORDER_NOTIFY_EMAIL?` added to `env-schema.ts`; required in production **at use time**; never logged.
+- **Secrets:** `RAZORPAY_KEY_ID` (public), `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `RAZORPAY_WEBHOOK_SECRET_PREVIOUS?`, `CRON_SECRET`, `PAYMENT_GATEWAY`, `ORDER_NOTIFY_EMAIL?` added to `env-schema.ts`; never logged. A build never needs them; a production **server** refuses to start without the key pair and a webhook secret (startup readiness check), and live keys are refused outside production.
 - **PII:** address snapshots are personal data; logs carry order ids only; the Phase 8/10 DPDP work must anonymise `email/phone/address` on account deletion while keeping amounts (accounting) — noted, not done here.
 - **Audit:** `order_events` is append-only by convention (no update/delete code paths; a DB-level rule needs a second role and is a Phase 10 hardening item); every status change, payment transition, stock change, cron action and email send writes an event with its actor.
 - **Webhook hygiene:** body limited to 256 KB; signature verified before parsing; parsed with a Zod schema; unknown event types stored as `IGNORED`.

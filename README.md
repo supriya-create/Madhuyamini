@@ -58,12 +58,14 @@ npx playwright install chromium webkit
 
 ## Environment
 
-| Variable   | Required                                                   | Purpose                                                                                                           |
-| ---------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `SITE_ENV` | No (defaults to `development`; falls back to `VERCEL_ENV`) | `development` / `preview` / `production`. Only production is indexable, and only production rejects placeholders. |
-| `SITE_URL` | In production (https)                                      | Canonical origin for metadata.                                                                                    |
+| Variable          | Required                                                     | Purpose                                                                                                                                    |
+| ----------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `SITE_ENV`        | No (defaults to `development`; falls back to `VERCEL_ENV`)   | `development` / `preview` / `production`. Only production is indexable, and only production rejects placeholders.                          |
+| `SITE_URL`        | In production (https)                                        | Canonical origin for metadata.                                                                                                             |
+| `PAYMENT_GATEWAY` | No (defaults to `fake` in development, `razorpay` elsewhere) | `razorpay` / `fake`. Production refuses `fake`; a preview must opt in explicitly.                                                          |
+| `DATABASE_URL`    | Yes                                                          | PostgreSQL connection. A preview deployment must use a separate database whose name ends in `_preview` or `_test`, or it refuses to start. |
 
-Variables are validated at startup in `src/server/env-schema.ts`.
+Variables are validated at startup in `src/server/env-schema.ts`: Razorpay key id, key secret and webhook secret are set together or not at all, and a production server additionally refuses to start without a complete, live Razorpay configuration (`src/instrumentation.ts`). The full per-environment configuration, including which values belong to local, CI, preview and production, is in [docs/environments.md](docs/environments.md).
 
 > **Note:** a production build (`SITE_ENV=production`) intentionally fails until the hero photograph replaces its `ImagePending` placeholder.
 
