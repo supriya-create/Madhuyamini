@@ -7,6 +7,7 @@ import { Prisma } from "@/generated/prisma/client";
 import * as orders from "@/features/orders/data";
 import { db } from "@/server/db";
 import { decideRetry, describeError, workerId } from "@/server/jobs/queue";
+import { enqueueOpsAlert } from "@/server/notifications/outbox";
 import { getPaymentGateway } from "@/server/payments";
 
 import { applyCapture, applyFailure } from "./capture";
@@ -125,6 +126,7 @@ export async function processWebhookEvent(
          SET claimed_at = ${now}, claimed_by = ${worker}, attempts = attempts + 1
        WHERE id = ${eventId}
          AND status = 'RECEIVED'::webhook_status
+         AND next_attempt_at <= ${now}
          AND (claimed_at IS NULL OR claimed_at < ${leaseCutoff})
        RETURNING id, attempts
     `,
@@ -152,16 +154,51 @@ export async function processWebhookEvent(
     return result.kind === "ignored" ? "ignored" : "processed";
   } catch (error) {
     const retry = decideRetry(policy, claim.attempts, now);
-    await db.paymentWebhookEvent.update({
-      where: { id: eventId },
-      data: {
-        status: retry.giveUp ? "FAILED" : "RECEIVED",
-        lastError: describeError(error),
-        nextAttemptAt: retry.nextAttemptAt,
-        claimedAt: null,
-      },
+    const lastError = describeError(error);
+    if (!retry.giveUp) {
+      await db.paymentWebhookEvent.update({
+        where: { id: eventId },
+        data: {
+          status: "RECEIVED",
+          lastError,
+          nextAttemptAt: retry.nextAttemptAt,
+          claimedAt: null,
+        },
+      });
+      return "retry_scheduled";
+    }
+    // Out of retries: the delivery is kept, marked FAILED, and the owner is
+    // told what to look at. A capture is never abandoned silently.
+    const order = row.providerOrderId
+      ? await data.findAttemptByProviderOrderId(row.providerOrderId)
+      : null;
+    await db.$transaction(async (tx) => {
+      await tx.paymentWebhookEvent.update({
+        where: { id: eventId },
+        data: {
+          status: "FAILED",
+          lastError,
+          nextAttemptAt: retry.nextAttemptAt,
+          claimedAt: null,
+          orderId: order?.orderId ?? row.orderId,
+        },
+      });
+      await enqueueOpsAlert(tx, {
+        key: `webhook-failed:${eventId}`,
+        orderId: order?.orderId ?? row.orderId,
+        payload: {
+          reason: `Webhook ${row.eventType} could not be applied after ${claim.attempts} attempts; needs manual reconciliation`,
+          eventId,
+          eventType: row.eventType,
+          providerOrderId: row.providerOrderId ?? "",
+          providerPaymentId: row.providerPaymentId ?? "",
+          orderNumber: order?.order.orderNumber ?? "",
+          attempts: claim.attempts,
+          lastError,
+        },
+      });
     });
-    return retry.giveUp ? "failed" : "retry_scheduled";
+    return "failed";
   }
 }
 
@@ -202,6 +239,25 @@ async function applyWebhook(
       }
       const attempt = await data.findAttemptByProviderOrderId(payment.order_id);
       if (!attempt) {
+        if (isCaptureEvent(eventType)) {
+          // Money moved for an order we cannot find: not ours to apply, but
+          // never ours to forget either.
+          await db.$transaction((tx) =>
+            enqueueOpsAlert(tx, {
+              key: `webhook-unmatched:${payment.id}`,
+              orderId: null,
+              payload: {
+                reason:
+                  "A payment was captured for a provider order that matches no attempt; needs manual reconciliation",
+                eventType,
+                providerOrderId: payment.order_id ?? "",
+                providerPaymentId: payment.id,
+                amountInPaise: payment.amount ?? 0,
+                currency: payment.currency ?? "",
+              },
+            }),
+          );
+        }
         return {
           kind: "ignored",
           orderId: null,
@@ -236,7 +292,7 @@ async function applyWebhook(
           note: `Payment status ${payment.status} is not a capture.`,
         };
       }
-      await applyCapture({
+      const outcome = await applyCapture({
         attemptId: attempt.id,
         providerPaymentId: payment.id,
         amountInPaise: payment.amount ?? 0,
@@ -245,6 +301,14 @@ async function applyWebhook(
         signatureVerified: true,
         now,
       });
+      if (outcome === "not_applicable") {
+        // The attempt is in a state no capture can move (it never reached the
+        // provider). Treat it as a failure so the retries and, at the end,
+        // the alert keep the capture visible rather than marking it done.
+        throw new Error(
+          `capture ${payment.id} cannot be applied to attempt ${attempt.attemptNo} of order ${attempt.order.orderNumber} (status ${attempt.status})`,
+        );
+      }
       return { kind: "processed", orderId: attempt.orderId };
     }
     case "refund.processed":
@@ -300,6 +364,10 @@ async function applyWebhook(
         note: `Unhandled event ${eventType}.`,
       };
   }
+}
+
+function isCaptureEvent(eventType: string): boolean {
+  return eventType === "payment.captured" || eventType === "order.paid";
 }
 
 async function recordAuthorized(

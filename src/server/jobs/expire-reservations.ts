@@ -29,14 +29,20 @@ export async function runExpireReservations(
   for (const { id } of candidates) {
     summary.examined += 1;
 
-    // Network first, outside any transaction.
-    const open = await payments.findOpenAttempt(id);
-    if (open?.providerOrderId) {
-      const outcome = await reconcileAttempt(open.id, now).catch(() => null);
+    // Network first, outside any transaction. Every attempt with a provider
+    // order is asked about, including ones a modal error marked FAILED: the
+    // customer may have paid on a later try within the same provider order.
+    let captured = false;
+    for (const attempt of await payments.findReconcilableAttempts(id)) {
+      const outcome = await reconcileAttempt(attempt.id, now).catch(() => null);
       if (outcome?.kind === "captured") {
-        summary.confirmed += 1;
-        continue;
+        captured = true;
+        break;
       }
+    }
+    if (captured) {
+      summary.confirmed += 1;
+      continue;
     }
 
     const cancelled = await db.$transaction(async (tx) => {

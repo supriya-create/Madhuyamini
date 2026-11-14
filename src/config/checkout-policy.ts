@@ -44,6 +44,14 @@ export const checkoutPolicySchema = z
         confirmingPollSeconds: positiveInt,
         /** Pending attempts older than this are reconciled with the provider. */
         reconcileAfterMinutes: positiveInt,
+        /**
+         * How long after cancellation an online order's uncaptured attempts
+         * keep being checked with the provider (a capture nobody told us
+         * about is refunded, never revived). Checks follow `jobs.backoffMinutes`.
+         * Razorpay polls a bank for a late authorisation for 3 days, so the
+         * window must reach at least that far.
+         */
+        reconcileCancelledWithinHours: positiveInt,
       })
       .strict(),
     reservation: z
@@ -101,6 +109,8 @@ export const checkoutPolicy: CheckoutPolicy = checkoutPolicySchema.parse({
     currency: "INR",
     confirmingPollSeconds: 3,
     reconcileAfterMinutes: 2,
+    // Approved 14 Nov 2026: Razorpay's late-authorisation horizon (3 days).
+    reconcileCancelledWithinHours: 72,
   },
   // D6: 15 minutes, extended once by 15 minutes when a new attempt starts.
   reservation: { ttlMinutes: 15, extensionMinutes: 15, maxExtensions: 1 },
@@ -143,3 +153,4 @@ export function backoffMinutesFor(
 /** The only place minutes and days become milliseconds (keeps literals out of the jobs). */
 export const minutesToMs = (minutes: number): number => minutes * 60 * 1000;
 export const daysToMs = (days: number): number => days * 24 * 60 * 60 * 1000;
+export const hoursToMs = (hours: number): number => hours * 60 * 60 * 1000;

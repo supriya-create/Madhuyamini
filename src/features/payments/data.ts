@@ -201,7 +201,22 @@ export function findStaleInitiatedAttempts(
   });
 }
 
-/** Open online attempts old enough to reconcile with the provider. */
+/**
+ * Statuses the provider may still have captured against: open attempts, and
+ * attempts marked FAILED from a modal error or an earlier try on the same
+ * provider order, which can still be paid (`FAILED → CAPTURED`).
+ */
+export const RECONCILABLE_STATUSES: readonly PaymentStatus[] = [
+  "CREATED",
+  "AUTHORIZED",
+  "FAILED",
+];
+
+/**
+ * Online attempts of pending orders old enough to reconcile with the
+ * provider. FAILED attempts are included while they carry a provider order:
+ * a browser-reported failure is not evidence that no capture followed.
+ */
 export function findAttemptsToReconcile(
   olderThan: Date,
   limit: number,
@@ -209,13 +224,61 @@ export function findAttemptsToReconcile(
 ) {
   return tx.payment.findMany({
     where: {
-      status: { in: ["CREATED", "AUTHORIZED"] },
+      status: { in: [...RECONCILABLE_STATUSES] },
       method: "RAZORPAY",
+      providerOrderId: { not: null },
       updatedAt: { lt: olderThan },
       order: { status: "PENDING_PAYMENT" },
     },
     select: { id: true },
     orderBy: { updatedAt: "asc" },
     take: limit,
+  });
+}
+
+/**
+ * Uncaptured attempts of online orders cancelled within the window
+ * (docs/checkout.md §9 #28): a capture the provider never announced is
+ * found here and refunded. Ordered by cancellation so the oldest are seen
+ * first; the job decides which are due for a check.
+ */
+export function findCancelledAttemptsToReconcile(
+  cancelledSince: Date,
+  limit: number,
+  tx: Tx = db,
+) {
+  return tx.payment.findMany({
+    where: {
+      method: "RAZORPAY",
+      status: { in: [...RECONCILABLE_STATUSES] },
+      providerOrderId: { not: null },
+      order: {
+        status: "CANCELLED",
+        paymentMethod: "RAZORPAY",
+        cancelledAt: { gte: cancelledSince },
+      },
+    },
+    select: {
+      id: true,
+      orderId: true,
+      attemptNo: true,
+      order: { select: { cancelledAt: true } },
+    },
+    orderBy: { order: { cancelledAt: "asc" } },
+    take: limit,
+  });
+}
+
+/** Every attempt of an order the provider could have captured (the sweep's pre-check). */
+export function findReconcilableAttempts(orderId: string, tx: Tx = db) {
+  return tx.payment.findMany({
+    where: {
+      orderId,
+      method: "RAZORPAY",
+      status: { in: [...RECONCILABLE_STATUSES] },
+      providerOrderId: { not: null },
+    },
+    select: attemptSelect,
+    orderBy: { attemptNo: "desc" },
   });
 }

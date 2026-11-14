@@ -17,6 +17,10 @@ import {
 
 export type RefundReason =
   | "late_capture_no_stock"
+  /** Paid after cancellation while the cart already carries a newer order. */
+  | "late_capture_superseded"
+  /** Paid after cancellation, discovered by reconciliation rather than a notification. */
+  | "late_capture_after_cancellation"
   | "duplicate_payment"
   | "cancelled_by_shop"
   | "review_cancelled"

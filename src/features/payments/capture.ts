@@ -32,6 +32,13 @@ export interface CaptureFacts {
   readonly actor: OrderActor;
   readonly signatureVerified: boolean;
   readonly now: Date;
+  /**
+   * What to do with a capture on a cancelled order whose cart is still free:
+   * a notification (webhook, callback) may revive the order when the stock
+   * is still there (P8); reconciliation discovering a capture nobody told
+   * us about refunds it and leaves the order cancelled. Defaults to revive.
+   */
+  readonly lateCapture?: "revive" | "refund";
 }
 
 export type CaptureOutcome =
@@ -43,10 +50,22 @@ export type CaptureOutcome =
   | "mismatch"
   /** Paid after the deadline cancelled the order; stock re-secured. */
   | "late_confirmed"
-  /** Paid after cancellation and the stock is gone: refund queued. */
+  /** Paid after cancellation and not revived (stock gone, or found by reconciliation): refund queued. */
   | "refund_queued"
+  /**
+   * Paid after cancellation, but the cart has since been used for a newer
+   * order (docs/checkout.md §9 #10): the cancelled order stays cancelled and
+   * the whole capture is refunded.
+   */
+  | "superseded_refund_queued"
   /** A second capture on an already confirmed order: refund queued. */
   | "duplicate_refund_queued"
+  /**
+   * The capture is recorded but its refund intent could not be queued (a
+   * refund with the computed reference already exists); the owner is alerted
+   * and the money must be refunded by hand. Never reported as a success.
+   */
+  | "refund_not_queued"
   /** The attempt is not in a state that can be captured (never issued a provider order). */
   | "not_applicable";
 
@@ -112,6 +131,50 @@ export async function applyCapture(
     }
 
     if (order.status === "CANCELLED") {
+      // The cart may have moved on to a newer order since the cancellation.
+      // Reviving this one would make two live orders for the cart
+      // (`orders_one_live_per_cart`), so the money goes back instead: the
+      // customer has already re-ordered, and the newer order stands.
+      const successor = order.cartId
+        ? await orders.findLiveOrderForCart(order.cartId, tx)
+        : null;
+      if (successor && successor.id !== order.id) {
+        await orders.recordOrderEvent(tx, {
+          orderId: order.id,
+          type: "payment.late_capture",
+          actor: facts.actor,
+          note: `Paid after cancellation; the cart has since been used for order ${successor.orderNumber}, so this order stays cancelled and the payment is refunded.`,
+          data: { supersededBy: successor.orderNumber },
+        });
+        const queued = await queueRefund(
+          tx,
+          order,
+          current,
+          facts,
+          "late_capture_superseded",
+        );
+        return queued ? "superseded_refund_queued" : "refund_not_queued";
+      }
+
+      if (facts.lateCapture === "refund") {
+        // Found by reconciliation, not announced by the provider: the
+        // customer has had no confirmation and the order stays cancelled.
+        await orders.recordOrderEvent(tx, {
+          orderId: order.id,
+          type: "payment.late_capture",
+          actor: facts.actor,
+          note: "Paid after cancellation; found by reconciliation without a notification, so the order stays cancelled and the payment is refunded.",
+        });
+        const queued = await queueRefund(
+          tx,
+          order,
+          current,
+          facts,
+          "late_capture_after_cancellation",
+        );
+        return queued ? "refund_queued" : "refund_not_queued";
+      }
+
       // Late capture (P8): the stock went back when the order expired.
       const restock = await tryCommitForOrder(tx, order.items);
       if (restock.ok) {
@@ -124,22 +187,34 @@ export async function applyCapture(
         );
         return "late_confirmed";
       }
-      await queueRefund(tx, order, current, facts, "late_capture_no_stock");
+      const queued = await queueRefund(
+        tx,
+        order,
+        current,
+        facts,
+        "late_capture_no_stock",
+      );
       await moveTo(tx, order, "late_capture_no_stock", facts.actor, facts.now, {
         note: "Paid after the deadline; stock no longer available. Refund queued.",
       });
-      return "refund_queued";
+      return queued ? "refund_queued" : "refund_not_queued";
     }
 
     // CONFIRMED or NEEDS_REVIEW already: this is a second payment.
-    await queueRefund(tx, order, current, facts, "duplicate_payment");
+    const queued = await queueRefund(
+      tx,
+      order,
+      current,
+      facts,
+      "duplicate_payment",
+    );
     await orders.recordOrderEvent(tx, {
       orderId: order.id,
       type: "payment.duplicate",
       actor: facts.actor,
       note: "A second capture arrived for an order that was already paid; refund queued.",
     });
-    return "duplicate_refund_queued";
+    return queued ? "duplicate_refund_queued" : "refund_not_queued";
   });
 }
 
@@ -276,20 +351,60 @@ async function moveTo(
   void now;
 }
 
+/**
+ * Queues the automatic refund of a capture. The reference sequence counts
+ * the attempt's existing refund rows (as the admin refunds do), so an earlier
+ * refund on the attempt never collides with this one. The caller holds the
+ * order lock, so the count cannot race. A skipped insert is therefore never
+ * "already queued": it is reported, alerted, and surfaced as a distinct
+ * outcome rather than passed off as success.
+ */
 async function queueRefund(
   tx: Prisma.TransactionClient,
   order: OrderUnderLock,
   attempt: { id: string; attemptNo: number },
   facts: CaptureFacts,
-  reason: "late_capture_no_stock" | "duplicate_payment",
-): Promise<void> {
-  await queueRefundIntent(tx, {
+  reason:
+    | "late_capture_no_stock"
+    | "late_capture_superseded"
+    | "late_capture_after_cancellation"
+    | "duplicate_payment",
+): Promise<boolean> {
+  const existing = await tx.refund.count({ where: { paymentId: attempt.id } });
+  const { created, reference } = await queueRefundIntent(tx, {
     order,
     attempt,
     amountInPaise: facts.amountInPaise,
     actor: facts.actor,
     reason,
+    sequence: existing + 1,
   });
+  if (created) return true;
+  await orders.recordOrderEvent(tx, {
+    orderId: order.id,
+    type: "refund.not_queued",
+    actor: facts.actor,
+    note: `A refund of ${facts.amountInPaise} ${facts.currency} could not be queued: a refund with reference ${reference} already exists. Needs a manual refund.`,
+    data: {
+      reference,
+      reason,
+      attemptNo: attempt.attemptNo,
+      amountInPaise: facts.amountInPaise,
+    },
+  });
+  await enqueueOpsAlert(tx, {
+    key: `refund-not-queued:${reference}`,
+    orderId: order.id,
+    payload: {
+      reason: "Refund intent could not be queued; needs a manual refund",
+      orderNumber: order.orderNumber,
+      reference,
+      attemptNo: attempt.attemptNo,
+      amountInPaise: facts.amountInPaise,
+      refundReason: reason,
+    },
+  });
+  return false;
 }
 
 export interface FailureFacts {

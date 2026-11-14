@@ -273,6 +273,10 @@ export function refundRequestedMessage(params: {
       "a second payment reached us for an order that was already paid",
     late_capture_no_stock:
       "the payment reached us after the pieces had been released and they are no longer available",
+    late_capture_superseded:
+      "the payment reached us after the order had been cancelled and a newer order had been placed, so the newer order stands",
+    late_capture_after_cancellation:
+      "the payment reached us after the order had been cancelled",
     cancelled_by_shop: "we were unable to fulfil your order",
     review_cancelled:
       "we could not complete your order after checking the payment",

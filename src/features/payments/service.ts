@@ -341,6 +341,7 @@ export type ReconcileOutcome =
 export async function reconcileAttempt(
   attemptId: string,
   now = new Date(),
+  options: { readonly lateCapture?: "revive" | "refund" } = {},
 ): Promise<ReconcileOutcome> {
   const attempt = await data.findAttempt(attemptId);
   if (!attempt || !attempt.providerOrderId) return { kind: "not_applicable" };
@@ -362,6 +363,7 @@ export async function reconcileAttempt(
       actor: "CRON",
       signatureVerified: false,
       now,
+      ...(options.lateCapture ? { lateCapture: options.lateCapture } : {}),
     });
     return { kind: "captured", capture };
   }
