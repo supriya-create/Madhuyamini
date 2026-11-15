@@ -15,8 +15,18 @@ export interface HeroImage {
   readonly height: number;
 }
 
-/** Supplied by the owner (D2). While null, development shows a placeholder and production builds fail. */
-export const heroImage: HeroImage | null = null;
+/**
+ * Supplied by the owner (D2) on 15 Nov 2026. A site-relative URL is a static
+ * file under public/, served as one file; a Cloudinary URL would be resized
+ * per viewport by the image loader (still to do). While null, development
+ * shows a placeholder and production builds fail.
+ */
+export const heroImage: HeroImage | null = {
+  url: "/images/home/hero.webp",
+  alt: "A woman in a cream saree covered in Madhubani fish, flower and mandala motifs, standing beside framed Madhubani paintings in soft daylight.",
+  width: 1122,
+  height: 1402,
+};
 
 export const hero = {
   eyebrow: "Madhubani · Mithila",

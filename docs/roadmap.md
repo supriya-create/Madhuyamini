@@ -1,6 +1,6 @@
 # Madhuyamini — Roadmap
 
-Status: **Phases 1–7 implemented (1 Nov 2026); Phase 8 approved on 2 Nov 2026 and in progress from step 8.0 (not implemented yet).** Brand inputs (D2) and the Razorpay test-mode smoke are still outstanding; the admin dashboard ([admin.md](admin.md), §17 for implementation notes) is built and tested, and its production blockers are listed in admin.md §16.
+Status: **Phases 1–7 implemented (1 Nov 2026); Phase 8 approved on 2 Nov 2026 and in progress from step 8.0 (not implemented yet).** Brand inputs (D2: the homepage hero image arrived on 15 Nov 2026; the logo, product photography, contact details and brand facts are still outstanding) and the Razorpay test-mode smoke are still outstanding; the admin dashboard ([admin.md](admin.md), §17 for implementation notes) is built and tested, and its production blockers are listed in admin.md §16.
 
 Related: [architecture.md](architecture.md) · [design-system.md](design-system.md). Decision IDs (D1–D9) refer to architecture.md §7.
 
@@ -83,7 +83,7 @@ A production-grade foundation (tooling, strict TypeScript, linting, tests, CI, d
 
 **1.4 Homepage editorial sections**
 
-- [x] Hero: headline, primary and secondary calls to action, framed image slot. **The image itself is pending (D2).**
+- [x] Hero: headline, primary and secondary calls to action, framed image. **The image arrived on 15 Nov 2026 and is served as one static file from `public/images/home/hero.webp`; moving it to Cloudinary, where the image loader gives it responsive variants, is still open (D2).**
 - [x] Brand introduction (draft copy, pending owner review)
 - [x] Madhubani heritage: history and the five styles (draft copy). **Artist storytelling is pending (D2).**
 - [x] Craftsmanship and authenticity (draft copy, pending owner review)

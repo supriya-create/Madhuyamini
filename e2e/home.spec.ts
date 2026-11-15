@@ -17,6 +17,36 @@ test.describe("homepage", () => {
     await expect(page.locator("html")).toHaveAttribute("lang", "en-IN");
   });
 
+  test("shows the hero photograph, preloaded, instead of the placeholder", async ({
+    page,
+    request,
+  }) => {
+    await page.goto("/");
+    const hero = page.getByRole("region", {
+      name: "Madhubani, in every thread and frame",
+    });
+    const image = hero.getByRole("img", { name: /cream saree/ });
+    await expect(image).toBeVisible();
+    await expect(image).toHaveAttribute("src", "/images/home/hero.webp");
+    // The file really decodes: a broken or placeholder image has no width.
+    await expect
+      .poll(() =>
+        image.evaluate((element) => (element as HTMLImageElement).naturalWidth),
+      )
+      .toBe(1122);
+    // It is the largest thing above the fold, so it is preloaded.
+    await expect(
+      page.locator(
+        'head link[rel="preload"][as="image"][href="/images/home/hero.webp"]',
+      ),
+    ).toHaveCount(1);
+    await expect(page.getByText("Image pending")).toHaveCount(0);
+
+    const file = await request.get("/images/home/hero.webp");
+    expect(file.status()).toBe(200);
+    expect(file.headers()["content-type"]).toBe("image/webp");
+  });
+
   test("renders each editorial section as a named region", async ({ page }) => {
     await page.goto("/");
 

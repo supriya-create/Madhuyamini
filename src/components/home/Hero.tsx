@@ -19,6 +19,10 @@ if (isProduction && heroImage === null) {
 }
 
 export function Hero() {
+  // A site-relative URL is a static file in public/. The Cloudinary loader
+  // cannot resize it, so it is served as one file rather than as a srcset of
+  // identical candidates.
+  const servedAsIs = heroImage !== null && heroImage.url.startsWith("/");
   return (
     <section aria-labelledby="hero-heading" className={styles.hero}>
       <Container className={styles.grid}>
@@ -46,6 +50,7 @@ export function Hero() {
               height={heroImage.height}
               sizes="(min-width: 64em) 40vw, (min-width: 48em) 50vw, 100vw"
               priority
+              unoptimized={servedAsIs}
             />
           ) : (
             <ImagePending
