@@ -10,7 +10,7 @@ import { getCurrentUser } from "@/server/auth/current-user";
 import { resolveCartContext } from "@/server/cart/context";
 import { routes } from "@/lib/routes";
 
-import styles from "./page.module.css";
+import styles from "../page.module.css";
 
 export const metadata: Metadata = {
   title: "Checkout",

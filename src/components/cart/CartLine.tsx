@@ -40,7 +40,11 @@ export function CartLine({ line }: { line: CartLineView }) {
             className={styles.image}
           />
         ) : (
-          <ProductImageFallback title={line.product.title} aspect="square" />
+          <ProductImageFallback
+            title={line.product.title}
+            aspect="square"
+            size="thumbnail"
+          />
         )}
       </div>
 

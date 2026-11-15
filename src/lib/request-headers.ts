@@ -3,4 +3,6 @@
  * access to the URL (layouts). The proxy overwrites them on every matched
  * request, so a value a client sends never reaches the application.
  */
-export const ADMIN_PATH_HEADER = "x-madhuyamini-path";
+
+/** The pathname of the matched request (`/account/…` and `/admin/…`). */
+export const REQUEST_PATH_HEADER = "x-madhuyamini-path";

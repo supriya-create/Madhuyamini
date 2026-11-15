@@ -19,3 +19,15 @@
   letter-spacing: var(--tracking-eyebrow);
   text-transform: uppercase;
 }
+
+/* Thumbnails: a shorter label, smaller type, no tracking, so it fits a 4rem box. */
+.fallback[data-size="thumbnail"] {
+  padding: var(--space-2);
+}
+
+.fallback[data-size="thumbnail"] .label {
+  font-size: var(--text-xs);
+  letter-spacing: 0.02em;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}

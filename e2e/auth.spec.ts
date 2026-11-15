@@ -116,6 +116,9 @@ test.describe("sign in and sign out", () => {
       "not correct",
     );
     await expect(page).toHaveURL(/\/login/);
+    // B-10: the email stays for the retry; the password never does.
+    await expect(page.getByLabel("Email address")).toHaveValue(email);
+    await expect(page.getByLabel("Password", { exact: true })).toHaveValue("");
 
     await page.goto("/account");
     await expect(page).toHaveURL(/\/login\?next=%2Faccount/);
@@ -137,6 +140,42 @@ test.describe("sign in and sign out", () => {
     await expect(page).toHaveURL(/\/$/);
     await page.goto("/account");
     await expect(page).toHaveURL(/\/login/);
+  });
+
+  test("B-17: a session that lapsed on a deep account page comes back to that page", async ({
+    page,
+    browser,
+  }, testInfo) => {
+    const email = uniqueEmail("lapsed", testInfo);
+    await register(page, email);
+    await signIn(page, email);
+    await page.goto("/account/orders");
+    await expect(page).toHaveURL(/\/account\/orders$/);
+
+    // Another device signs out everything else, which revokes this session.
+    const other = await browser.newContext({
+      extraHTTPHeaders: { "x-forwarded-for": fakeAddress() },
+    });
+    const otherPage = await other.newPage();
+    await signIn(otherPage, email);
+    await expect(otherPage).toHaveURL(/\/account$/);
+    await otherPage.goto("/account/security");
+    // Both devices are listed, so the bulk sign-out is offered.
+    await expect(
+      otherPage.locator("li").filter({ hasText: "Signed in" }),
+    ).toHaveCount(2);
+    await otherPage
+      .getByRole("button", { name: "Sign out other devices" })
+      .click();
+    // The action settles server-side; from then on the first device's cookie
+    // is dead and the deep page must send it to sign in with its own path.
+    await expect
+      .poll(async () => {
+        await page.goto("/account/orders");
+        return page.url();
+      })
+      .toMatch(/\/login\?next=%2Faccount%2Forders$/);
+    await other.close();
   });
 
   test("the header reflects the signed-in state", async ({

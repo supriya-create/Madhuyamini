@@ -141,6 +141,33 @@ describe("listProducts", () => {
     expect(titles).toEqual([...titles].sort((a, b) => a.localeCompare(b)));
   });
 
+  it("sends a page past the end to the last page, keeping the filters, and never redirects an empty result", async () => {
+    await expect(
+      listProducts({ sort: "title", pageSize: 3, page: 9 }),
+    ).rejects.toMatchObject({
+      name: "PageOutOfRangeError",
+      lastPage: 3,
+      pageSize: 3,
+      filters: expect.objectContaining({ sort: "title" }) as unknown,
+    });
+    await expect(
+      listProducts({
+        category: "clothing",
+        technique: "HAND_PAINTED",
+        page: 4,
+      }),
+    ).rejects.toMatchObject({
+      name: "PageOutOfRangeError",
+      lastPage: 1,
+      filters: expect.objectContaining({
+        techniques: ["HAND_PAINTED"],
+      }) as unknown,
+    });
+    // An empty scope has no last page to go to: it resolves as empty.
+    const empty = await listProducts({ category: "notebooks", page: 5 });
+    expect(empty).toMatchObject({ total: 0, totalPages: 0, items: [] });
+  });
+
   it("summarises price range, stock and the primary image", async () => {
     const page = await listProducts({ category: "canvas-prints" });
     const canvas = page.items[0];

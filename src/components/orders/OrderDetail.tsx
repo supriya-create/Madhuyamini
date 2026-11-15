@@ -112,6 +112,7 @@ export function OrderDetail({
                   <ProductImageFallback
                     title={item.productTitle}
                     aspect="square"
+                    size="thumbnail"
                   />
                 )}
               </div>

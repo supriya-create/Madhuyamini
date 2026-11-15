@@ -110,3 +110,10 @@
   color: var(--text);
   resize: vertical;
 }
+
+/* A returning customer can sign in without losing the cart (B-09). */
+.signIn {
+  margin-block-end: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}

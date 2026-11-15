@@ -4,7 +4,7 @@ import { headers } from "next/headers";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { safeReturnPath } from "@/features/auth/schemas";
 import { requireStaffSessionOrRedirect } from "@/server/auth/staff";
-import { ADMIN_PATH_HEADER } from "@/lib/request-headers";
+import { REQUEST_PATH_HEADER } from "@/lib/request-headers";
 import { routes } from "@/lib/routes";
 
 /**
@@ -19,7 +19,7 @@ export const metadata: Metadata = {
 };
 
 export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
-  const requested = (await headers()).get(ADMIN_PATH_HEADER);
+  const requested = (await headers()).get(REQUEST_PATH_HEADER);
   const ctx = await requireStaffSessionOrRedirect(
     safeReturnPath(requested, routes.admin),
   );

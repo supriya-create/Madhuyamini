@@ -112,6 +112,29 @@ export interface FormState {
   /** Message safe to show to the customer. */
   readonly message?: string;
   readonly fieldErrors?: FieldErrors;
+  /**
+   * What the customer had typed, echoed back on failure so a re-rendered form
+   * keeps it (React resets a form once its action settles). Never a password.
+   */
+  readonly values?: Readonly<Record<string, string>>;
+}
+
+/**
+ * Attaches the submitted values of the named fields to an error state, so the
+ * form can re-populate them. Passwords and other secrets must not be listed.
+ */
+export function withEchoedValues(
+  state: FormState,
+  formData: FormData,
+  fields: readonly string[],
+): FormState {
+  if (state.status !== "error") return state;
+  const values: Record<string, string> = {};
+  for (const field of fields) {
+    const value = formData.get(field);
+    if (typeof value === "string") values[field] = value;
+  }
+  return { ...state, values };
 }
 
 export const idleFormState: FormState = { status: "idle" };

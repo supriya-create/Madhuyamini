@@ -21,6 +21,7 @@ import {
   rateLimitKey,
 } from "@/server/auth/rate-limit";
 import { db } from "@/server/db";
+import { rateLimitedMessage } from "@/lib/rate-limit-message";
 import { routes } from "@/lib/routes";
 
 import { authErrorMessage, isPasswordPolicyError } from "./errors";
@@ -31,6 +32,7 @@ import {
   resetPasswordSchema,
   safeReturnPath,
   signInSchema,
+  withEchoedValues,
 } from "./schemas";
 import type { FormState } from "./schemas";
 
@@ -42,15 +44,8 @@ import type { FormState } from "./schemas";
 
 const GENERIC_SIGN_IN_ERROR =
   "That email and password combination is not correct.";
-const TRY_LATER =
-  "Too many attempts. Please wait a little while and try again.";
-
 function rateLimited(retryAfterSeconds: number): FormState {
-  const minutes = Math.max(1, Math.ceil(retryAfterSeconds / 60));
-  return {
-    status: "error",
-    message: `${TRY_LATER} (About ${minutes} minute${minutes === 1 ? "" : "s"}.)`,
-  };
+  return { status: "error", message: rateLimitedMessage(retryAfterSeconds) };
 }
 
 async function enforce(
@@ -129,7 +124,17 @@ export async function registerAction(
   };
 }
 
+/** Sign in; on failure the email (never the password) is echoed back to the form. */
 export async function signInAction(
+  prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  return withEchoedValues(await signInSubmission(prev, formData), formData, [
+    "email",
+  ]);
+}
+
+async function signInSubmission(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {

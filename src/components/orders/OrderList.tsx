@@ -22,7 +22,7 @@ export function OrderList({ orders }: { orders: readonly OrderSummaryView[] }) {
               {formatDate(order.placedAt)} · {order.itemCount}{" "}
               {order.itemCount === 1 ? "item" : "items"}
               {order.firstItem
-                ? ` · ${order.firstItem.title}${order.itemCount > 1 ? " and more" : ""}`
+                ? ` · ${order.firstItem.title}${order.lineCount > 1 ? " and more" : ""}`
                 : ""}
             </p>
           </div>

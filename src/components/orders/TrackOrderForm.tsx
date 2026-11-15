@@ -12,6 +12,7 @@ import { trackOrderAction } from "@/features/checkout/actions";
 export function TrackOrderForm() {
   const [state, action] = useActionState(trackOrderAction, idleFormState);
   const errors = state.fieldErrors ?? {};
+  const echoed = state.values ?? {};
   return (
     <form action={action} className={formStyles.form} noValidate>
       <FormStatus state={state} />
@@ -21,6 +22,7 @@ export function TrackOrderForm() {
         label="Order number"
         placeholder="MY-XXXXXXXX"
         autoComplete="off"
+        defaultValue={echoed.orderNumber ?? ""}
         required
         error={errors.orderNumber}
       />
@@ -31,6 +33,7 @@ export function TrackOrderForm() {
         type="email"
         autoComplete="email"
         inputMode="email"
+        defaultValue={echoed.email ?? ""}
         required
         error={errors.email}
       />

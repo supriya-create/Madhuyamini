@@ -6,6 +6,7 @@ import { parseOrThrow } from "@/lib/validation";
 import { NotFoundError } from "@/server/errors";
 
 import * as data from "./data";
+import { PageOutOfRangeError } from "./errors";
 import type { ProductDetailRow, ProductSummaryRow } from "./data";
 import {
   availableStock,
@@ -25,6 +26,7 @@ import type {
   ProductDetail,
   ProductPage,
   ProductSummary,
+  ProductListFilters,
 } from "./types";
 
 /**
@@ -32,9 +34,14 @@ import type {
  * pass untrusted values (route params, search params) straight through.
  */
 
-export function getCategoryTree(): Promise<CategoryNode[]> {
-  return data.findCategoryTree();
-}
+/**
+ * The navigation taxonomy. `cache` memoises per server request only (React's
+ * request-scoped cache), so the header, footer and homepage share one query
+ * and the next request reads the database again: admin edits show at once.
+ */
+export const getCategoryTree = cache((): Promise<CategoryNode[]> =>
+  data.findCategoryTree(),
+);
 
 export async function getCategoryBySlug(
   input: unknown,
@@ -55,20 +62,53 @@ export async function listProducts(input: unknown): Promise<ProductPage> {
     categoryIds = [category.id, ...category.children.map((child) => child.id)];
   }
 
-  const [{ items, total }, availableTechniques] = await Promise.all([
+  const pageFilters = {
+    categoryIds,
+    q: query.q,
+    techniques: query.techniques,
+    minPriceInPaise: query.minPriceInPaise,
+    maxPriceInPaise: query.maxPriceInPaise,
+    inStock: query.inStock,
+    sort: query.sort,
+  };
+  const filters: ProductListFilters = {
+    q: query.q ?? null,
+    techniques: query.techniques,
+    minPriceInPaise: query.minPriceInPaise ?? null,
+    maxPriceInPaise: query.maxPriceInPaise ?? null,
+    inStock: query.inStock,
+    sort: query.sort,
+  };
+
+  const [found, availableTechniques] = await Promise.all([
     data.findProductsPage({
-      categoryIds,
-      q: query.q,
-      techniques: query.techniques,
-      minPriceInPaise: query.minPriceInPaise,
-      maxPriceInPaise: query.maxPriceInPaise,
-      inStock: query.inStock,
-      sort: query.sort,
+      ...pageFilters,
       skip: (query.page - 1) * query.pageSize,
       take: query.pageSize,
     }),
     data.findAvailableTechniques(categoryIds),
   ]);
+  let { items, total } = found;
+
+  // The total rides on the returned rows, so a page past the end reads as
+  // zero. Ask once more from the start: a non-empty result means the page
+  // is simply too far (redirect to the last one); an empty one is empty.
+  if (items.length === 0 && query.page > 1) {
+    const fromStart = await data.findProductsPage({
+      ...pageFilters,
+      skip: 0,
+      take: query.pageSize,
+    });
+    total = fromStart.total;
+    if (total > 0) {
+      throw new PageOutOfRangeError({
+        lastPage: Math.ceil(total / query.pageSize),
+        pageSize: query.pageSize,
+        filters,
+      });
+    }
+    items = fromStart.items;
+  }
 
   return {
     items: items.map(toProductSummary),
@@ -77,14 +117,7 @@ export async function listProducts(input: unknown): Promise<ProductPage> {
     total,
     totalPages: Math.ceil(total / query.pageSize),
     category,
-    filters: {
-      q: query.q ?? null,
-      techniques: query.techniques,
-      minPriceInPaise: query.minPriceInPaise ?? null,
-      maxPriceInPaise: query.maxPriceInPaise ?? null,
-      inStock: query.inStock,
-      sort: query.sort,
-    },
+    filters,
     availableTechniques: [...availableTechniques].sort(),
   };
 }

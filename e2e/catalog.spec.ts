@@ -314,3 +314,70 @@ test.describe("accessibility of catalog pages", () => {
     });
   }
 });
+
+test.describe("listing pages past the end (audit batch 3, B-11)", () => {
+  test("a page past the last lands on the last page with the search, sort and page size kept", async ({
+    page,
+  }) => {
+    await page.goto("/search?q=sample&pageSize=3&sort=title&page=9");
+    await expect(page).toHaveURL(/page=3/);
+    await expect(page).toHaveURL(/q=sample/);
+    await expect(page).toHaveURL(/sort=title/);
+    await expect(
+      page.getByRole("heading", { level: 2, name: /7 products · showing 7–7/ }),
+    ).toBeVisible();
+    await expect(page.locator("article h3")).toHaveCount(1);
+  });
+
+  test("a filtered collection past its end keeps the filter", async ({
+    page,
+  }) => {
+    await page.goto("/collections/clothing?technique=HAND_PAINTED&page=4");
+    await expect(page).toHaveURL(/technique=HAND_PAINTED/);
+    await expect(page).not.toHaveURL(/page=4/);
+    await expect(
+      page.getByRole("heading", { level: 2, name: /2 products/ }),
+    ).toBeVisible();
+  });
+
+  test("an empty collection shows its empty state and never redirects", async ({
+    page,
+  }) => {
+    const response = await page.goto("/collections/notebooks?page=5");
+    expect(response?.status()).toBe(200);
+    await expect(page).toHaveURL(/\/collections\/notebooks\?page=5$/);
+    await expect(
+      page.getByRole("heading", { name: "Nothing here yet" }),
+    ).toBeVisible();
+  });
+});
+
+test.describe("footer navigation (audit batch 3, B-05 and B-19)", () => {
+  test("the footer lists the seeded top-level categories and nothing that is not built", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    const footer = page.getByRole("navigation", { name: "Footer" });
+    for (const name of ["Clothing", "Wall Art", "Home Décor", "Accessories"]) {
+      await expect(
+        footer.getByRole("link", { name, exact: true }),
+      ).toBeVisible();
+    }
+    for (const name of [
+      "Custom artwork",
+      "Shipping and delivery",
+      "Returns and exchanges",
+      "Care guide",
+      "Contact us",
+      "Privacy policy",
+      "Terms of service",
+    ]) {
+      await expect(page.getByRole("link", { name, exact: true })).toHaveCount(
+        0,
+      );
+    }
+    await expect(
+      footer.getByRole("link", { name: "The Madhubani tradition" }),
+    ).toBeVisible();
+  });
+});

@@ -8,7 +8,13 @@ import type { Page } from "@playwright/test";
 
 import { FAKE_WEBHOOK_SECRET } from "../src/server/payments/fake-secrets";
 import { waitForEmail } from "../tests/support/mailbox";
-import { fakeAddress, register, signIn, uniqueEmail } from "./accounts";
+import {
+  PASSWORD,
+  fakeAddress,
+  register,
+  signIn,
+  uniqueEmail,
+} from "./accounts";
 import { expectNoAxeViolations } from "./support";
 
 /**
@@ -375,5 +381,162 @@ test.describe("cron routes", () => {
     expect((await page.request.get("/api/cron/cleanup")).status()).toBe(401);
     const summary = await runJob(page, "cleanup");
     expect(summary.job).toBe("cleanup");
+  });
+});
+
+test.describe("checkout usability (audit batch 3)", () => {
+  test("B-06: a stale quote is refreshed in place and the next submit places the order", async ({
+    page,
+    context,
+  }, testInfo) => {
+    const email = uniqueEmail("stale", testInfo);
+    await addTote(page);
+    await page.goto("/checkout");
+    const hash = page.locator('input[name="quoteHash:COD"]');
+    const stale = await hash.inputValue();
+    expect(stale.length).toBeGreaterThan(20);
+
+    // The cart changes in another tab while this page is open, so the quote
+    // this form carries is genuinely out of date.
+    const other = await context.newPage();
+    await addTote(other);
+    await other.close();
+
+    await page.getByLabel("Email address").fill(email);
+    await page.getByLabel("Phone number").fill("9876543210");
+    await fillAddress(page);
+    await page.getByLabel(/Cash on delivery/).check();
+    await page.getByRole("button", { name: "Place order" }).click();
+
+    const alert = page.getByRole("main").getByRole("alert");
+    await expect(alert).toContainText("Prices changed");
+    await expect(page).toHaveURL(/\/checkout$/);
+    // The same response re-rendered the page: a new quote replaces the stale
+    // one and the summary shows the cart as it is now...
+    await expect(hash).not.toHaveValue(stale);
+    await expect(page.getByRole("main")).toContainText(/2 × ₹/);
+    // ...and what the customer typed is still there.
+    await expect(page.getByLabel("Email address")).toHaveValue(email);
+    await expect(page.getByLabel("City")).toHaveValue("Madhubani");
+
+    await page.getByLabel(/Cash on delivery/).check();
+    await page.getByRole("button", { name: "Place order" }).click();
+    await expect(page).toHaveURL(/\/checkout\/confirmation\/.*placed=1$/);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+      "Thank you",
+    );
+  });
+
+  test("B-09: a returning customer signs in from checkout and comes back to it", async ({
+    page,
+  }, testInfo) => {
+    const email = uniqueEmail("return-checkout", testInfo);
+    await register(page, email);
+    await addTote(page);
+    await page.goto("/checkout");
+    await page
+      .getByRole("link", { name: "Sign in to use your saved addresses" })
+      .click();
+    await expect(page).toHaveURL(/\/login\?next=%2Fcheckout$/);
+    await page.getByLabel("Email address").fill(email);
+    await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page).toHaveURL(/\/checkout$/);
+    // The cart came along and the contact email is now the account's.
+    await expect(page.getByText(email)).toBeVisible();
+    await expect(page.getByText("Subtotal")).toBeVisible();
+    await page.getByLabel("Phone number").fill("9876543210");
+    await fillAddress(page);
+    await page.getByLabel(/Cash on delivery/).check();
+    await page.getByRole("button", { name: "Place order" }).click();
+    await expect(page).toHaveURL(/\/checkout\/confirmation\//);
+  });
+
+  test("B-12: a malformed or unknown order id gets a real 404, never the error page", async ({
+    page,
+    request,
+  }) => {
+    const unknown = "11111111-2222-4333-8444-555555555555";
+    for (const path of [
+      "/checkout/pay/not-a-uuid",
+      "/checkout/confirming/not-a-uuid",
+      "/checkout/confirmation/not-a-uuid",
+      `/checkout/confirming/${unknown}`,
+    ]) {
+      // The order routes sit outside the checkout loading boundary, so the
+      // status is the real one, not a streamed 200.
+      const response = await request.get(path, { maxRedirects: 0 });
+      expect(response.status(), path).toBe(404);
+      const html = await response.text();
+      expect(html, path).toContain("couldn’t find that page");
+      expect(html, path).not.toContain("Something went wrong");
+
+      await page.goto(path);
+      await expect(
+        page.getByRole("heading", { name: /couldn’t find that page/ }),
+        path,
+      ).toBeVisible();
+      await expect(page.getByText("Something went wrong"), path).toHaveCount(0);
+    }
+  });
+
+  test("B-12: a guest asking about an order it cannot see is redirected with a real 307", async ({
+    request,
+  }) => {
+    const unknown = "11111111-2222-4333-8444-555555555555";
+    const pay = await request.get(`/checkout/pay/${unknown}`, {
+      maxRedirects: 0,
+    });
+    expect(pay.status()).toBe(307);
+    const login = new URL(pay.headers()["location"] ?? "", pay.url());
+    expect(login.pathname).toBe("/login");
+    expect(login.searchParams.get("next")).toBe(`/checkout/pay/${unknown}`);
+
+    const confirmation = await request.get(
+      `/checkout/confirmation/${unknown}`,
+      { maxRedirects: 0 },
+    );
+    expect(confirmation.status()).toBe(307);
+    expect(
+      new URL(confirmation.headers()["location"] ?? "", confirmation.url())
+        .pathname,
+    ).toBe("/orders/track");
+  });
+
+  test("B-12: a signed-in customer gets a real 404 for an order that is not theirs", async ({
+    page,
+  }, testInfo) => {
+    const unknown = "11111111-2222-4333-8444-555555555555";
+    const email = uniqueEmail("not-mine", testInfo);
+    await register(page, email);
+    await signIn(page, email);
+    await expect(page).toHaveURL(/\/account$/);
+    for (const path of [
+      `/checkout/pay/${unknown}`,
+      `/checkout/confirmation/${unknown}`,
+    ]) {
+      const response = await page.request.get(path, { maxRedirects: 0 });
+      expect(response.status(), path).toBe(404);
+      expect(await response.text(), path).toContain("couldn’t find that page");
+    }
+  });
+
+  test("B-10: a failed order lookup keeps the number and email typed", async ({
+    page,
+  }, testInfo) => {
+    // Lookups are limited per email as well as per address, so each project
+    // and run asks about its own (non-existent) customer.
+    const email = uniqueEmail("track-echo", testInfo);
+    await page.goto("/orders/track");
+    await page.getByLabel("Order number").fill("MY-NOTREAL1");
+    await page.getByLabel("Email address used for the order").fill(email);
+    await page.getByRole("button", { name: "Find my order" }).click();
+    await expect(page.getByRole("main").getByRole("alert")).toContainText(
+      "could not find",
+    );
+    await expect(page.getByLabel("Order number")).toHaveValue("MY-NOTREAL1");
+    await expect(
+      page.getByLabel("Email address used for the order"),
+    ).toHaveValue(email);
   });
 });

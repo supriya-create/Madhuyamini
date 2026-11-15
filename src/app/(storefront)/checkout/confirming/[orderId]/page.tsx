@@ -7,6 +7,7 @@ import { Container } from "@/components/ui/Container";
 import { getCheckoutPolicy } from "@/config/checkout-policy";
 import { findAccessibleOrder } from "@/features/orders/service";
 import { routes } from "@/lib/routes";
+import { orderIdSchema } from "@/features/checkout/schemas";
 import { resolveOrderAccess } from "@/server/orders/context";
 
 import styles from "../../page.module.css";
@@ -20,6 +21,8 @@ export default async function ConfirmingPage({
   params,
 }: PageProps<"/checkout/confirming/[orderId]">) {
   const { orderId } = await params;
+  // A malformed id is a wrong address, not a server fault: 404, never 500.
+  if (!orderIdSchema.safeParse({ orderId }).success) notFound();
   const found = await findAccessibleOrder(await resolveOrderAccess(), orderId);
   if (!found) notFound();
   if (found.row.status !== "PENDING_PAYMENT") {

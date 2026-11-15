@@ -2,26 +2,36 @@ import Link from "next/link";
 
 import { Container } from "@/components/ui/Container";
 import { MotifDivider } from "@/components/motifs/MotifDivider";
-import { navCategories } from "@/content/navigation";
+import {
+  customArtworkLink,
+  helpLinks,
+  isAvailableLink,
+  legalLinks,
+} from "@/content/navigation";
 import { site } from "@/content/site";
+import { getCategoryTree } from "@/features/catalog/service";
 import { routes } from "@/lib/routes";
 
 import styles from "./Footer.module.css";
 
-const helpLinks = [
-  { label: "Shipping and delivery", href: routes.policy("shipping") },
-  { label: "Returns and exchanges", href: routes.policy("returns") },
-  { label: "Care guide", href: routes.careGuide },
-  { label: "Contact us", href: routes.contact },
-] as const;
-
-const legalLinks = [
-  { label: "Privacy policy", href: routes.policy("privacy") },
-  { label: "Terms of service", href: routes.policy("terms") },
-] as const;
-
-export function Footer() {
+/**
+ * Footer navigation. The shop column reads the same category tree as the
+ * header (one query per request, memoised), so merchandising changes never
+ * leave a stale footer link. Help and legal links appear only once their
+ * pages exist (Phase 9); an empty column is not rendered at all.
+ */
+export async function Footer() {
   const { contact, social } = site;
+  const tree = await getCategoryTree();
+  const shopLinks = [
+    ...tree.map((category) => ({
+      label: category.name,
+      href: routes.collection(category.slug),
+    })),
+    ...[customArtworkLink].filter(isAvailableLink),
+  ];
+  const help = helpLinks.filter(isAvailableLink);
+  const legal = legalLinks.filter(isAvailableLink);
 
   return (
     <footer data-surface="ink" className={styles.footer}>
@@ -38,27 +48,26 @@ export function Footer() {
             <div>
               <h2 className={styles.columnTitle}>Shop</h2>
               <ul className={styles.links}>
-                {navCategories.map((category) => (
-                  <li key={category.id}>
-                    <Link href={category.href}>{category.label}</Link>
-                  </li>
-                ))}
-                <li>
-                  <Link href={routes.customArtwork}>Custom artwork</Link>
-                </li>
-              </ul>
-            </div>
-
-            <div>
-              <h2 className={styles.columnTitle}>Help</h2>
-              <ul className={styles.links}>
-                {helpLinks.map((link) => (
+                {shopLinks.map((link) => (
                   <li key={link.href}>
                     <Link href={link.href}>{link.label}</Link>
                   </li>
                 ))}
               </ul>
             </div>
+
+            {help.length > 0 ? (
+              <div>
+                <h2 className={styles.columnTitle}>Help</h2>
+                <ul className={styles.links}>
+                  {help.map((link) => (
+                    <li key={link.href}>
+                      <Link href={link.href}>{link.label}</Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
 
             <div>
               <h2 className={styles.columnTitle}>Madhuyamini</h2>
@@ -101,13 +110,15 @@ export function Footer() {
           <p>
             © {new Date().getFullYear()} {site.name}
           </p>
-          <ul className={styles.legalLinks}>
-            {legalLinks.map((link) => (
-              <li key={link.href}>
-                <Link href={link.href}>{link.label}</Link>
-              </li>
-            ))}
-          </ul>
+          {legal.length > 0 ? (
+            <ul className={styles.legalLinks}>
+              {legal.map((link) => (
+                <li key={link.href}>
+                  <Link href={link.href}>{link.label}</Link>
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </div>
       </Container>
     </footer>

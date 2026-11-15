@@ -87,7 +87,10 @@ export interface OrderSummaryView {
   readonly paymentMethod: PaymentMethod;
   readonly totalInPaise: number;
   readonly placedAt: Date;
+  /** Units across every line. */
   readonly itemCount: number;
+  /** Distinct lines; "and more" in a list means more lines, not more units. */
+  readonly lineCount: number;
   readonly firstItem: {
     readonly title: string;
     readonly image: { readonly url: string; readonly alt: string } | null;
@@ -222,6 +225,7 @@ export function toOrderSummaryView(row: OrderSummaryRow): OrderSummaryView {
     totalInPaise: row.totalInPaise,
     placedAt: row.createdAt,
     itemCount: row.items.reduce((count, item) => count + item.quantity, 0),
+    lineCount: row.items.length,
     firstItem: first
       ? {
           title: first.productTitle,

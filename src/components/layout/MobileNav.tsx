@@ -6,6 +6,7 @@ import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 
 import { Icon } from "@/components/ui/Icon";
+import { isAvailableLink } from "@/content/navigation";
 import type { NavCategory, NavLink } from "@/content/navigation";
 
 import styles from "./MobileNav.module.css";
@@ -116,7 +117,7 @@ export function MobileNav({ categories, extras, searchSlot }: MobileNavProps) {
                 </details>
               </li>
             ))}
-            {extras.map((link) => (
+            {extras.filter(isAvailableLink).map((link) => (
               <li key={link.href}>
                 <Link
                   href={link.href}

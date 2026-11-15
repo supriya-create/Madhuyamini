@@ -16,6 +16,7 @@ import { toOrderDetailView } from "@/features/orders/types";
 import { findOpenAttempt } from "@/features/payments/data";
 import { formatINR } from "@/lib/money";
 import { routes } from "@/lib/routes";
+import { orderIdSchema } from "@/features/checkout/schemas";
 import { resolveOrderAccess } from "@/server/orders/context";
 import { getPaymentGateway, isFakeGateway } from "@/server/payments";
 
@@ -34,6 +35,8 @@ export default async function PayPage({
   searchParams,
 }: PageProps<"/checkout/pay/[orderId]">) {
   const [{ orderId }, query] = await Promise.all([params, searchParams]);
+  // A malformed id is a wrong address, not a server fault: 404, never 500.
+  if (!orderIdSchema.safeParse({ orderId }).success) notFound();
   const access = await resolveOrderAccess();
   const found = await findAccessibleOrder(access, orderId);
   if (!found) {

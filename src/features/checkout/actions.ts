@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import type { OrderStatus } from "@/generated/prisma/enums";
@@ -8,6 +9,7 @@ import { z } from "zod";
 import { getCheckoutPolicy } from "@/config/checkout-policy";
 import { createAddress, findAddress } from "@/features/account/data";
 import { parseForm, pickFormValues } from "@/features/auth/form-data";
+import { withEchoedValues } from "@/features/auth/schemas";
 import type { FormState } from "@/features/auth/schemas";
 import {
   OrderNotCancellableError,
@@ -36,6 +38,7 @@ import {
   resolveOrderAccess,
 } from "@/server/orders/context";
 import { getFakeGateway, isFakeGateway } from "@/server/payments";
+import { rateLimitedMessage } from "@/lib/rate-limit-message";
 import { routes } from "@/lib/routes";
 
 import {
@@ -75,9 +78,44 @@ function failure(message: string): FormState {
   return { status: "error", message };
 }
 
-const TOO_MANY = "Too many attempts. Please wait a minute and try again.";
+/** The rate-limit reply names the longer of the waits that apply. */
+function tooMany(
+  ...outcomes: ReadonlyArray<{ allowed: boolean; retryAfterSeconds: number }>
+): FormState {
+  const wait = Math.max(
+    0,
+    ...outcomes.filter((o) => !o.allowed).map((o) => o.retryAfterSeconds),
+  );
+  return failure(rateLimitedMessage(wait));
+}
 
+/** Place the order; on failure the customer's entries are echoed back to the form. */
 export async function placeOrderAction(
+  prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  return withEchoedValues(
+    await placeOrderSubmission(prev, formData),
+    formData,
+    ECHOED_CHECKOUT_FIELDS,
+  );
+}
+
+/** Everything the customer types at checkout except nothing secret is typed there. */
+const ECHOED_CHECKOUT_FIELDS = [
+  "email",
+  "phone",
+  "recipientName",
+  "line1",
+  "line2",
+  "landmark",
+  "city",
+  "state",
+  "postalCode",
+  "customerNote",
+] as const;
+
+async function placeOrderSubmission(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
@@ -112,7 +150,7 @@ export async function placeOrderAction(
       policy.rateLimits.placeOrderByIp,
     ),
   ]);
-  if (!byIdentity.allowed || !byIp.allowed) return failure(TOO_MANY);
+  if (!byIdentity.allowed || !byIp.allowed) return tooMany(byIdentity, byIp);
 
   let address: AddressSnapshot;
   if (form.addressId) {
@@ -203,8 +241,12 @@ export async function placeOrderAction(
           : routes.checkoutConfirmation(outcome.orderId),
       );
     case "quote_changed":
+      // Re-render the page in this same response so the summary and the
+      // hidden quote hashes the form carries are the current ones; the next
+      // submit then matches without a manual reload.
+      revalidatePath(routes.checkout);
       return failure(
-        "The prices or totals changed while you were checking out. Please review the updated summary and place the order again.",
+        "Prices changed while you were checking out. The totals shown are now up to date; please review them and place the order again.",
       );
     case "not_purchasable":
       redirect(`${routes.cart}?issue=availability`);
@@ -302,7 +344,7 @@ export async function confirmPaymentAction(
     rateLimitKey("confirm-payment", orderId),
     policy.rateLimits.confirmPayment,
   );
-  if (!limit.allowed) return failure(TOO_MANY);
+  if (!limit.allowed) return tooMany(limit);
 
   const outcome = await confirmFromCallback({
     orderId,
@@ -385,7 +427,19 @@ export async function checkOrderStatusAction(
   };
 }
 
+/** Guest lookup; on failure the number and email are echoed back to the form. */
 export async function trackOrderAction(
+  prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  return withEchoedValues(
+    await trackOrderSubmission(prev, formData),
+    formData,
+    ["orderNumber", "email"],
+  );
+}
+
+async function trackOrderSubmission(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
@@ -405,7 +459,7 @@ export async function trackOrderAction(
       policy.rateLimits.trackOrderByEmail,
     ),
   ]);
-  if (!byIp.allowed || !byEmail.allowed) return failure(TOO_MANY);
+  if (!byIp.allowed || !byEmail.allowed) return tooMany(byIp, byEmail);
 
   const found = await trackOrder(parsed.data);
   if (!found) {

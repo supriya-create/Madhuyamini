@@ -7,6 +7,7 @@ import type { FocusEvent } from "react";
 
 import { Container } from "@/components/ui/Container";
 import { Icon } from "@/components/ui/Icon";
+import { isAvailableLink } from "@/content/navigation";
 import type { NavCategory, NavLink } from "@/content/navigation";
 
 import styles from "./DesktopNav.module.css";
@@ -116,7 +117,7 @@ export function DesktopNav({ categories, extras }: DesktopNavProps) {
             </li>
           );
         })}
-        {extras.map((link) => (
+        {extras.filter(isAvailableLink).map((link) => (
           <li key={link.href}>
             <Link href={link.href} className={styles.link}>
               {link.label}

@@ -8,6 +8,7 @@ import { Container } from "@/components/ui/Container";
 import { findAccessibleOrder } from "@/features/orders/service";
 import { toOrderDetailView } from "@/features/orders/types";
 import { routes } from "@/lib/routes";
+import { orderIdSchema } from "@/features/checkout/schemas";
 import { resolveOrderAccess } from "@/server/orders/context";
 
 import styles from "../../page.module.css";
@@ -22,6 +23,8 @@ export default async function ConfirmationPage({
   searchParams,
 }: PageProps<"/checkout/confirmation/[orderId]">) {
   const [{ orderId }, query] = await Promise.all([params, searchParams]);
+  // A malformed id is a wrong address, not a server fault: 404, never 500.
+  if (!orderIdSchema.safeParse({ orderId }).success) notFound();
   const access = await resolveOrderAccess();
   const found = await findAccessibleOrder(access, orderId);
   if (!found) {

@@ -2,7 +2,7 @@ import { getSessionCookie } from "better-auth/cookies";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-import { ADMIN_PATH_HEADER } from "@/lib/request-headers";
+import { REQUEST_PATH_HEADER } from "@/lib/request-headers";
 
 /**
  * Optimistic redirect only: a missing session cookie means the account and
@@ -18,10 +18,11 @@ export function proxy(request: NextRequest) {
     login.searchParams.set("next", request.nextUrl.pathname);
     return NextResponse.redirect(login);
   }
-  // The admin layout has no access to the URL; it reads the path from this
-  // header, which is overwritten here so a client cannot supply its own.
+  // The account and admin layouts have no access to the URL; they read the
+  // path from this header, which is overwritten here so a client cannot
+  // supply its own.
   const requestHeaders = new Headers(request.headers);
-  requestHeaders.set(ADMIN_PATH_HEADER, request.nextUrl.pathname);
+  requestHeaders.set(REQUEST_PATH_HEADER, request.nextUrl.pathname);
   return NextResponse.next({ request: { headers: requestHeaders } });
 }
 

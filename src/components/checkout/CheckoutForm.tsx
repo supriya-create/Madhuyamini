@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useState } from "react";
 
 import { Field } from "@/components/forms/Field";
@@ -12,6 +13,7 @@ import { idleFormState } from "@/features/auth/schemas";
 import { placeOrderAction } from "@/features/checkout/actions";
 import type { CodRefusal } from "@/features/checkout/rules";
 import { formatINR } from "@/lib/money";
+import { routes } from "@/lib/routes";
 
 import styles from "./CheckoutForm.module.css";
 
@@ -44,6 +46,9 @@ export function CheckoutForm({
 }: CheckoutFormProps) {
   const [state, action] = useActionState(placeOrderAction, idleFormState);
   const errors = state.fieldErrors ?? {};
+  // After a failed submit React resets the form; the action echoes what was
+  // typed so the reset lands on the customer's own entries.
+  const echoed = state.values ?? {};
   const defaultAddress =
     addresses.find((address) => address.isDefault) ?? addresses[0] ?? null;
   const [useNewAddress, setUseNewAddress] = useState(addresses.length === 0);
@@ -69,17 +74,29 @@ export function CheckoutForm({
             </p>
           </>
         ) : (
-          <Field
-            id="checkout-email"
-            name="email"
-            label="Email address"
-            type="email"
-            autoComplete="email"
-            inputMode="email"
-            hint="Your order confirmation goes here."
-            required
-            error={errors.email}
-          />
+          <>
+            <p className={styles.signIn}>
+              Have an account?{" "}
+              <Link
+                href={`${routes.login}?next=${encodeURIComponent(routes.checkout)}`}
+              >
+                Sign in to use your saved addresses
+              </Link>
+              .
+            </p>
+            <Field
+              id="checkout-email"
+              name="email"
+              label="Email address"
+              type="email"
+              autoComplete="email"
+              inputMode="email"
+              hint="Your order confirmation goes here."
+              defaultValue={echoed.email ?? ""}
+              required
+              error={errors.email}
+            />
+          </>
         )}
         <Field
           id="checkout-phone"
@@ -89,7 +106,7 @@ export function CheckoutForm({
           autoComplete="tel"
           inputMode="tel"
           hint="For delivery updates and cash-on-delivery confirmation."
-          defaultValue={customer?.phone ?? ""}
+          defaultValue={echoed.phone ?? customer?.phone ?? ""}
           required
           error={errors.phone}
         />
@@ -155,13 +172,14 @@ export function CheckoutForm({
               name="recipientName"
               label="Recipient’s name"
               autoComplete="shipping name"
-              defaultValue={customer?.name ?? ""}
+              defaultValue={echoed.recipientName ?? customer?.name ?? ""}
               required
               error={errors.recipientName}
             />
             <Field
               id="checkout-line1"
               name="line1"
+              defaultValue={echoed.line1 ?? ""}
               label="Address"
               autoComplete="shipping address-line1"
               required
@@ -170,6 +188,7 @@ export function CheckoutForm({
             <Field
               id="checkout-line2"
               name="line2"
+              defaultValue={echoed.line2 ?? ""}
               label="Address line 2 (optional)"
               autoComplete="shipping address-line2"
               error={errors.line2}
@@ -177,6 +196,7 @@ export function CheckoutForm({
             <Field
               id="checkout-landmark"
               name="landmark"
+              defaultValue={echoed.landmark ?? ""}
               label="Landmark (optional)"
               error={errors.landmark}
             />
@@ -184,6 +204,7 @@ export function CheckoutForm({
               <Field
                 id="checkout-city"
                 name="city"
+                defaultValue={echoed.city ?? ""}
                 label="City"
                 autoComplete="shipping address-level2"
                 required
@@ -192,6 +213,7 @@ export function CheckoutForm({
               <Field
                 id="checkout-state"
                 name="state"
+                defaultValue={echoed.state ?? ""}
                 label="State"
                 autoComplete="shipping address-level1"
                 required
@@ -201,6 +223,7 @@ export function CheckoutForm({
             <Field
               id="checkout-postal"
               name="postalCode"
+              defaultValue={echoed.postalCode ?? ""}
               label="PIN code"
               autoComplete="shipping postal-code"
               inputMode="numeric"
@@ -281,6 +304,7 @@ export function CheckoutForm({
           className={styles.textarea}
           rows={3}
           maxLength={500}
+          defaultValue={echoed.customerNote ?? ""}
           aria-invalid={errors.customerNote ? true : undefined}
         />
         {errors.customerNote ? (

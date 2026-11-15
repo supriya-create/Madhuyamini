@@ -39,6 +39,7 @@ export function OrderSummaryPanel({
                 <ProductImageFallback
                   title={line.product.title}
                   aspect="square"
+                  size="thumbnail"
                 />
               )}
             </div>

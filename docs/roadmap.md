@@ -24,6 +24,7 @@ Related: [architecture.md](architecture.md) · [design-system.md](design-system.
 - **"Best-selling" is computed, never claimed.** It is only used once it can be calculated from real orders. Until then the section is an admin-curated "Featured" selection.
 - **Reviews appear only when real.** Only verified-purchase reviews are shown, and the section is hidden when there are none.
 - **Policy pages may need to move earlier.** Razorpay's live-mode activation reviews the website for Contact, Terms, Privacy, Refund/Cancellation and Shipping pages. Those pages (Phase 9) can be pulled ahead of Phase 6 go-live.
+- **Links to unbuilt pages are hidden, not stubbed (audit batch 3, 15 Nov 2026).** The header's "Custom artwork" link (Phase 8) and the footer's shipping, returns, care-guide, contact, privacy and terms links (Phase 9) carry `available: false` in `src/content/navigation.ts` and are not rendered, so no visitor reaches a 404 and no placeholder page or invented policy text exists. The phase that ships each page flips the flag and removes the prefix from `e2e/pending-routes.ts`. Go-live still depends on Phase 9 restoring the legal links, which Razorpay's activation review requires.
 - **Phase 1 is a development build, not a public release.** Links into routes from later phases are tracked by a link-check end-to-end test that must pass before launch.
 
 ---

@@ -251,3 +251,32 @@ test.describe("wishlist", () => {
     await expect(page).toHaveURL(/\/login\?next=%2Faccount%2Fwishlist/);
   });
 });
+
+test.describe("thumbnails (audit batch 3, B-13)", () => {
+  test("the placeholder label stays inside its thumbnail on a phone", async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      !testInfo.project.name.startsWith("mobile-"),
+      "Mobile projects only",
+    );
+    await addDupatta(page, 1);
+    await page.goto("/cart");
+    const placeholder = page
+      .getByRole("img", { name: /no photograph yet/ })
+      .first();
+    await expect(placeholder).toBeVisible();
+    const fits = await placeholder.evaluate((element) => {
+      const label = element.querySelector("span");
+      if (!label) return false;
+      const box = element.getBoundingClientRect();
+      const text = label.getBoundingClientRect();
+      return (
+        label.scrollWidth <= label.clientWidth + 1 &&
+        text.left >= box.left - 1 &&
+        text.right <= box.right + 1
+      );
+    });
+    expect(fits).toBe(true);
+  });
+});

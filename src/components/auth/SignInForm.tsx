@@ -102,6 +102,7 @@ export function SignInForm({ next }: { next?: string }) {
           autoCorrect="off"
           spellCheck={false}
           enterKeyHint="next"
+          defaultValue={state.values?.email ?? ""}
           required
           error={clientErrors.email}
           onInput={clearError("email")}
