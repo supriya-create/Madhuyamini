@@ -627,6 +627,8 @@ enum NotificationStatus {
   PENDING
   SENT
   FAILED
+  /// Recorded but never sent: no recipient (an operations alert raised with no inbox configured).
+  SKIPPED
 
   @@map("notification_status")
 }
@@ -863,7 +865,8 @@ model NotificationOutbox {
   /// `${kind}:${orderId}`: one email per fact, and the provider idempotency key.
   dedupeKey     String             @unique @map("dedupe_key")
   orderId       String?            @map("order_id") @db.Uuid
-  recipient     String
+  /// Null only on SKIPPED rows (CHECK `notification_outbox_pending_has_recipient`).
+  recipient     String?
   /// Everything the template needs, captured at enqueue time.
   payload       Json
   status        NotificationStatus @default(PENDING)

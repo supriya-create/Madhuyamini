@@ -10,7 +10,7 @@ import { decideRetry, describeError, workerId } from "@/server/jobs/queue";
 import { enqueueOpsAlert } from "@/server/notifications/outbox";
 import { getPaymentGateway } from "@/server/payments";
 
-import { applyCapture, applyFailure } from "./capture";
+import { applyAuthorized, applyCapture, applyFailure } from "./capture";
 import * as data from "./data";
 
 /**
@@ -267,6 +267,7 @@ async function applyWebhook(
       if (eventType === "payment.failed") {
         const outcome = await applyFailure({
           attemptId: attempt.id,
+          source: "provider",
           providerPaymentId: payment.id,
           failureCode: payment.error_code ?? null,
           failureDescription: payment.error_description ?? null,
@@ -278,11 +279,26 @@ async function applyWebhook(
           : {
               kind: "ignored",
               orderId: attempt.orderId,
-              note: "Failure arrived after a capture or for a closed attempt.",
+              note: "Failure arrived after a capture, for a closed attempt, or for a payment other than the one authorised.",
             };
       }
       if (eventType === "payment.authorized") {
-        await recordAuthorized(attempt.id, attempt.orderId, payment.id, now);
+        if (payment.amount === undefined || payment.currency === undefined) {
+          return {
+            kind: "ignored",
+            orderId: attempt.orderId,
+            note: "Authorisation without an amount or currency.",
+          };
+        }
+        await applyAuthorized({
+          attemptId: attempt.id,
+          providerOrderId: payment.order_id,
+          providerPaymentId: payment.id,
+          amountInPaise: payment.amount,
+          currency: payment.currency,
+          actor: "WEBHOOK",
+          now,
+        });
         return { kind: "processed", orderId: attempt.orderId };
       }
       if (payment.status !== undefined && payment.status !== "captured") {
@@ -368,27 +384,4 @@ async function applyWebhook(
 
 function isCaptureEvent(eventType: string): boolean {
   return eventType === "payment.captured" || eventType === "order.paid";
-}
-
-async function recordAuthorized(
-  attemptId: string,
-  orderId: string,
-  providerPaymentId: string,
-  now: Date,
-): Promise<void> {
-  await db.$transaction(async (tx) => {
-    await orders.lockOrder(tx, orderId);
-    const moved = await data.markAttemptAuthorized(tx, attemptId, {
-      providerPaymentId,
-      now,
-    });
-    if (moved) {
-      await orders.recordOrderEvent(tx, {
-        orderId,
-        type: "payment.authorized",
-        actor: "WEBHOOK",
-        data: { providerPaymentId },
-      });
-    }
-  });
 }

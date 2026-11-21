@@ -14,6 +14,7 @@ import {
 import { findAccessibleOrder } from "@/features/orders/service";
 import { toOrderDetailView } from "@/features/orders/types";
 import { findOpenAttempt } from "@/features/payments/data";
+import { expireOverdueOrderFor } from "@/features/payments/expiry";
 import { formatINR } from "@/lib/money";
 import { routes } from "@/lib/routes";
 import { orderIdSchema } from "@/features/checkout/schemas";
@@ -55,6 +56,18 @@ export default async function PayPage({
 
   const attempt = await findOpenAttempt(orderId);
   const expired = !view.canPay;
+  // Overdue: settle the order now instead of waiting for the sweep, so what
+  // the page says below is true and the stock is free for others (B-23).
+  const settled = expired
+    ? await expireOverdueOrderFor(access, orderId, now)
+    : null;
+  if (settled?.kind === "confirmed") {
+    redirect(`${routes.checkoutConfirmation(orderId)}?placed=1`);
+  }
+  // Still pending with its stock held: the provider could not be asked, or
+  // the expiry failed on our side and has been reported.
+  const unsettled =
+    settled?.kind === "unverified" || settled?.kind === "failed";
   let keyId: string | null = null;
   try {
     keyId = getPaymentGateway().publicKeyId;
@@ -106,11 +119,20 @@ export default async function PayPage({
 
         {expired ? (
           <div className={styles.panel}>
-            <p>
-              The payment window for this order has closed and your pieces have
-              been released. Your cart is still waiting if you would like to try
-              again.
-            </p>
+            {unsettled ? (
+              <p>
+                The payment window for this order has closed. We are checking
+                with the payment provider whether a payment went through; if
+                none did, your pieces will be released shortly. Your cart is
+                still waiting if you would like to try again.
+              </p>
+            ) : (
+              <p>
+                The payment window for this order has closed and your pieces
+                have been released. Your cart is still waiting if you would like
+                to try again.
+              </p>
+            )}
             <div className={styles.actions}>
               <ButtonLink href={routes.cart}>Back to your cart</ButtonLink>
             </div>
@@ -167,12 +189,14 @@ export default async function PayPage({
         )}
 
         <div className={styles.actions}>
-          <form action={cancelPendingOrderAction}>
-            <input type="hidden" name="orderId" value={view.id} />
-            <Button type="submit" variant="quiet">
-              Cancel this order
-            </Button>
-          </form>
+          {expired ? null : (
+            <form action={cancelPendingOrderAction}>
+              <input type="hidden" name="orderId" value={view.id} />
+              <Button type="submit" variant="quiet">
+                Cancel this order
+              </Button>
+            </form>
+          )}
           <Link href={routes.checkoutConfirmation(view.id)}>Order details</Link>
         </div>
       </div>

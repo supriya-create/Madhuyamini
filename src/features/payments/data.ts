@@ -146,10 +146,19 @@ export async function markAttemptAuthorized(
   return result.count === 1;
 }
 
+/**
+ * CREATED or AUTHORIZED → FAILED; `from` names which of the two this caller
+ * may move. `providerPaymentId` is a provider-verified id, or null when the
+ * caller has none (a browser report always passes null). It is written only
+ * when the attempt carries no id or the same one: an attempt that holds a
+ * different payment's id does not move at all, so a verified id is never
+ * replaced.
+ */
 export async function markAttemptFailed(
   tx: Tx,
   attemptId: string,
   input: {
+    from: ReadonlyArray<"CREATED" | "AUTHORIZED">;
     providerPaymentId: string | null;
     failureCode: string | null;
     failureDescription: string | null;
@@ -157,13 +166,24 @@ export async function markAttemptFailed(
   },
 ): Promise<boolean> {
   const result = await tx.payment.updateMany({
-    where: { id: attemptId, status: { in: ["CREATED", "AUTHORIZED"] } },
+    where: {
+      id: attemptId,
+      status: { in: [...input.from] },
+      ...(input.providerPaymentId
+        ? {
+            OR: [
+              { providerPaymentId: null },
+              { providerPaymentId: input.providerPaymentId },
+            ],
+          }
+        : {}),
+    },
     data: {
       status: "FAILED",
       failedAt: input.now,
       failureCode: input.failureCode,
       failureDescription: input.failureDescription,
-      // A failed payment id is still worth keeping; never overwrite a capture's.
+      // A failed payment id is still worth keeping when the provider vouches for it.
       ...(input.providerPaymentId
         ? { providerPaymentId: input.providerPaymentId }
         : {}),

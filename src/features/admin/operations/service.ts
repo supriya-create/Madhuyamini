@@ -55,7 +55,7 @@ export interface OutboxView {
   readonly dedupeKey: string;
   readonly orderId: string | null;
   readonly orderNumber: string | null;
-  readonly recipient: string;
+  readonly recipient: string | null;
   readonly payload: unknown;
   readonly status: NotificationStatus;
   readonly attempts: number;
@@ -79,7 +79,12 @@ function toOutboxView(
     dedupeKey: row.dedupeKey,
     orderId: row.orderId,
     orderNumber: row.order?.orderNumber ?? null,
-    recipient: role === "ADMIN" ? row.recipient : maskEmail(row.recipient),
+    recipient:
+      row.recipient === null
+        ? null
+        : role === "ADMIN"
+          ? row.recipient
+          : maskEmail(row.recipient),
     payload: maskForRole(row.payload, role),
     status: row.status,
     attempts: row.attempts,
@@ -88,7 +93,9 @@ function toOutboxView(
     sentAt: row.sentAt,
     createdAt: row.createdAt,
     canRetry: row.status === "FAILED",
-    canDiscard: role === "ADMIN" && row.status !== "SENT",
+    // A SKIPPED alert has no address to send to and nothing to discard.
+    canDiscard:
+      role === "ADMIN" && row.status !== "SENT" && row.status !== "SKIPPED",
     acknowledged,
   };
 }
@@ -243,7 +250,7 @@ export async function discardNotification(
       });
       if (!row) throw new NotFoundError("Notification");
       const updated = await tx.notificationOutbox.updateMany({
-        where: { id, status: { not: "SENT" } },
+        where: { id, status: { notIn: ["SENT", "SKIPPED"] } },
         data: {
           status: "FAILED",
           lastError: `Discarded by staff: ${reason}`,
@@ -254,7 +261,9 @@ export async function discardNotification(
         },
       });
       if (updated.count !== 1) {
-        throw new OperationsError("A sent email cannot be discarded.");
+        throw new OperationsError(
+          "Only a pending or failed email can be discarded.",
+        );
       }
       return {
         result: undefined,

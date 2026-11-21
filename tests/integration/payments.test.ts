@@ -4,7 +4,7 @@ import { addToCart } from "@/features/cart/service";
 import { getCheckoutView, placeOrder } from "@/features/checkout/service";
 import type { AddressSnapshot } from "@/features/checkout/types";
 import { cancelPendingOrder } from "@/features/orders/service";
-import { applyCapture } from "@/features/payments/capture";
+import { applyAuthorized, applyCapture } from "@/features/payments/capture";
 import {
   confirmFromCallback,
   recordModalFailure,
@@ -238,6 +238,10 @@ describe("the browser callback", () => {
       }),
     ).toEqual({ kind: "confirming" });
     expect((await orderState(o.orderId)).order.status).toBe("PENDING_PAYMENT");
+    // B-16: the verified authorisation is noted on the attempt, nothing more.
+    expect(
+      await testDb.payment.findUniqueOrThrow({ where: { id: o.attemptId } }),
+    ).toMatchObject({ status: "AUTHORIZED", providerPaymentId });
 
     // The provider being unreachable is also "not yet".
     gateway.capturePayment(providerPaymentId);
@@ -710,6 +714,602 @@ describe("reconciliation", () => {
     expect(await reconcileAttempt(o.attemptId)).toEqual({
       kind: "captured",
       capture: "confirmed",
+    });
+  });
+});
+
+describe("authorised payments (audit batch 4, B-16)", () => {
+  type Pending = Awaited<ReturnType<typeof pendingOrder>>;
+
+  function authorizedBody(
+    o: Pending,
+    providerPaymentId: string,
+    overrides: Record<string, unknown> = {},
+  ): string {
+    return webhookBody("payment.authorized", {
+      id: providerPaymentId,
+      entity: "payment",
+      amount: o.totalInPaise,
+      currency: "INR",
+      status: "authorized",
+      order_id: o.providerOrderId,
+      method: "upi",
+      ...overrides,
+    });
+  }
+
+  function capturedBody(o: Pending, providerPaymentId: string): string {
+    return webhookBody("payment.captured", {
+      id: providerPaymentId,
+      entity: "payment",
+      amount: o.totalInPaise,
+      currency: "INR",
+      status: "captured",
+      order_id: o.providerOrderId,
+      method: "upi",
+    });
+  }
+
+  async function deliver(eventId: string, body: string, now: Date) {
+    await ingestWebhook({
+      rawBody: body,
+      signature: gateway.signWebhook(body),
+      eventId,
+      now,
+    });
+    return processWebhookEvent(eventId, { now });
+  }
+
+  async function attempt(o: Pending) {
+    return testDb.payment.findUniqueOrThrow({ where: { id: o.attemptId } });
+  }
+
+  async function authorizedEvents(orderId: string) {
+    return testDb.orderEvent.count({
+      where: { orderId, type: "payment.authorized" },
+    });
+  }
+
+  it("records a callback authorisation on the attempt and confirms on the later capture webhook", async () => {
+    const o = await pendingOrder();
+    const { providerPaymentId, signature } = gateway.simulatePayment(
+      o.providerOrderId,
+      { status: "authorized" },
+    );
+    expect(
+      await confirmFromCallback({
+        orderId: o.orderId,
+        providerOrderId: o.providerOrderId,
+        providerPaymentId,
+        signature,
+      }),
+    ).toEqual({ kind: "confirming" });
+    expect(await attempt(o)).toMatchObject({
+      status: "AUTHORIZED",
+      providerPaymentId,
+    });
+    expect((await attempt(o)).authorizedAt).not.toBeNull();
+    expect(await authorizedEvents(o.orderId)).toBe(1);
+    expect((await orderState(o.orderId)).order.status).toBe("PENDING_PAYMENT");
+
+    gateway.capturePayment(providerPaymentId);
+    const now = new Date();
+    expect(
+      await deliver("evt_cap", capturedBody(o, providerPaymentId), now),
+    ).toBe("processed");
+    expect(await attempt(o)).toMatchObject({
+      status: "CAPTURED",
+      providerPaymentId,
+    });
+    const state = await orderState(o.orderId);
+    expect(state.order.status).toBe("CONFIRMED");
+    expect(
+      state.eventTypes.filter((type) => type.startsWith("payment.")),
+    ).toEqual([
+      "payment.provider_order_created",
+      "payment.authorized",
+      "payment.captured",
+    ]);
+  });
+
+  it("treats an authorisation webhook followed by the callback as one fact", async () => {
+    const o = await pendingOrder();
+    const { providerPaymentId, signature } = gateway.simulatePayment(
+      o.providerOrderId,
+      { status: "authorized" },
+    );
+    const now = new Date();
+    expect(
+      await deliver("evt_auth", authorizedBody(o, providerPaymentId), now),
+    ).toBe("processed");
+    expect(await attempt(o)).toMatchObject({
+      status: "AUTHORIZED",
+      providerPaymentId,
+    });
+    expect(
+      await confirmFromCallback({
+        orderId: o.orderId,
+        providerOrderId: o.providerOrderId,
+        providerPaymentId,
+        signature,
+      }),
+    ).toEqual({ kind: "confirming" });
+    expect(await authorizedEvents(o.orderId)).toBe(1);
+    expect((await orderState(o.orderId)).order.status).toBe("PENDING_PAYMENT");
+  });
+
+  it("never downgrades a capture: an authorisation arriving after it changes nothing", async () => {
+    const o = await pendingOrder();
+    const { providerPaymentId, signature } = gateway.simulatePayment(
+      o.providerOrderId,
+      { status: "captured" },
+    );
+    const now = new Date();
+    expect(
+      await deliver("evt_cap", capturedBody(o, providerPaymentId), now),
+    ).toBe("processed");
+    expect((await orderState(o.orderId)).order.status).toBe("CONFIRMED");
+
+    // The shared operation refuses, whoever calls it.
+    expect(
+      await applyAuthorized({
+        attemptId: o.attemptId,
+        providerOrderId: o.providerOrderId,
+        providerPaymentId,
+        amountInPaise: o.totalInPaise,
+        currency: "INR",
+        actor: "WEBHOOK",
+        now,
+      }),
+    ).toBe("already_captured");
+    // A late authorisation webhook is acknowledged and ignored.
+    expect(
+      await deliver("evt_auth_late", authorizedBody(o, providerPaymentId), now),
+    ).toBe("processed");
+    // The browser callback sees the capture and confirms idempotently.
+    expect(
+      await confirmFromCallback({
+        orderId: o.orderId,
+        providerOrderId: o.providerOrderId,
+        providerPaymentId,
+        signature,
+      }),
+    ).toEqual({ kind: "confirmed", capture: "already_captured" });
+    expect(await attempt(o)).toMatchObject({ status: "CAPTURED" });
+    expect(await authorizedEvents(o.orderId)).toBe(0);
+    expect(
+      await testDb.orderEvent.count({
+        where: { orderId: o.orderId, type: "payment.captured" },
+      }),
+    ).toBe(1);
+  });
+
+  it("records one authorisation for duplicate callbacks", async () => {
+    const o = await pendingOrder();
+    const { providerPaymentId, signature } = gateway.simulatePayment(
+      o.providerOrderId,
+      { status: "authorized" },
+    );
+    const callback = () =>
+      confirmFromCallback({
+        orderId: o.orderId,
+        providerOrderId: o.providerOrderId,
+        providerPaymentId,
+        signature,
+      });
+    expect(await callback()).toEqual({ kind: "confirming" });
+    expect(await callback()).toEqual({ kind: "confirming" });
+    expect(await authorizedEvents(o.orderId)).toBe(1);
+    expect(await attempt(o)).toMatchObject({
+      status: "AUTHORIZED",
+      providerPaymentId,
+    });
+  });
+
+  it("refuses an authorisation whose amount, currency or provider order differ", async () => {
+    const o = await pendingOrder();
+    const short = gateway.simulatePayment(o.providerOrderId, {
+      status: "authorized",
+      amountInPaise: o.totalInPaise - 100,
+    });
+    expect(
+      await confirmFromCallback({
+        orderId: o.orderId,
+        providerOrderId: o.providerOrderId,
+        providerPaymentId: short.providerPaymentId,
+        signature: short.signature,
+      }),
+    ).toEqual({ kind: "confirming" });
+    expect(await attempt(o)).toMatchObject({
+      status: "CREATED",
+      providerPaymentId: null,
+    });
+    expect(await authorizedEvents(o.orderId)).toBe(0);
+    expect(
+      await testDb.orderEvent.count({
+        where: { orderId: o.orderId, type: "payment.authorization_mismatch" },
+      }),
+    ).toBe(1);
+    // Repeating the same mismatched callback notes nothing new.
+    await confirmFromCallback({
+      orderId: o.orderId,
+      providerOrderId: o.providerOrderId,
+      providerPaymentId: short.providerPaymentId,
+      signature: short.signature,
+    });
+    expect(
+      await testDb.orderEvent.count({
+        where: { orderId: o.orderId, type: "payment.authorization_mismatch" },
+      }),
+    ).toBe(1);
+
+    const now = new Date();
+    expect(
+      await applyAuthorized({
+        attemptId: o.attemptId,
+        providerOrderId: o.providerOrderId,
+        providerPaymentId: short.providerPaymentId,
+        amountInPaise: o.totalInPaise,
+        currency: "USD",
+        actor: "WEBHOOK",
+        now,
+      }),
+    ).toBe("mismatch");
+    expect(
+      await applyAuthorized({
+        attemptId: o.attemptId,
+        providerOrderId: "order_someone_else",
+        providerPaymentId: short.providerPaymentId,
+        amountInPaise: o.totalInPaise,
+        currency: "INR",
+        actor: "WEBHOOK",
+        now,
+      }),
+    ).toBe("not_applicable");
+    expect(await attempt(o)).toMatchObject({ status: "CREATED" });
+    expect((await orderState(o.orderId)).order.status).toBe("PENDING_PAYMENT");
+  });
+
+  it("a failed callback marks the attempt failed, never authorised", async () => {
+    const o = await pendingOrder();
+    const { providerPaymentId, signature } = gateway.simulatePayment(
+      o.providerOrderId,
+      { status: "failed", errorCode: "BAD_REQUEST_ERROR" },
+    );
+    expect(
+      await confirmFromCallback({
+        orderId: o.orderId,
+        providerOrderId: o.providerOrderId,
+        providerPaymentId,
+        signature,
+      }),
+    ).toEqual({ kind: "failed" });
+    expect(await attempt(o)).toMatchObject({
+      status: "FAILED",
+      providerPaymentId,
+    });
+    expect(await authorizedEvents(o.orderId)).toBe(0);
+  });
+
+  it("a callback and a webhook racing on the same authorisation record it once", async () => {
+    const o = await pendingOrder();
+    const { providerPaymentId, signature } = gateway.simulatePayment(
+      o.providerOrderId,
+      { status: "authorized" },
+    );
+    const now = new Date();
+    const body = authorizedBody(o, providerPaymentId);
+    await ingestWebhook({
+      rawBody: body,
+      signature: gateway.signWebhook(body),
+      eventId: "evt_race",
+      now,
+    });
+    const [callback, webhook] = await Promise.all([
+      confirmFromCallback({
+        orderId: o.orderId,
+        providerOrderId: o.providerOrderId,
+        providerPaymentId,
+        signature,
+      }),
+      processWebhookEvent("evt_race", { now }),
+    ]);
+    expect(callback).toEqual({ kind: "confirming" });
+    expect(webhook).toBe("processed");
+    expect(await attempt(o)).toMatchObject({
+      status: "AUTHORIZED",
+      providerPaymentId,
+    });
+    expect(await authorizedEvents(o.orderId)).toBe(1);
+    expect((await orderState(o.orderId)).order.status).toBe("PENDING_PAYMENT");
+  });
+
+  /**
+   * The batch 4 review: a failure report must never put an unverified
+   * payment id on the attempt, replace a verified one, or undo an
+   * authorisation on the browser's word.
+   */
+  describe("failure reports and verified payment ids", () => {
+    function failedBody(o: Pending, providerPaymentId: string): string {
+      return webhookBody("payment.failed", {
+        id: providerPaymentId,
+        entity: "payment",
+        amount: o.totalInPaise,
+        currency: "INR",
+        status: "failed",
+        order_id: o.providerOrderId,
+        method: "upi",
+        error_code: "BAD_REQUEST_ERROR",
+        error_description: "Declined by the bank",
+      });
+    }
+
+    async function failedEvents(orderId: string) {
+      return testDb.orderEvent.findMany({
+        where: { orderId, type: "payment.failed" },
+        orderBy: { createdAt: "asc" },
+      });
+    }
+
+    /** The modal's report, as the pay page posts it. */
+    function modalFailure(o: Pending, claimedPaymentId: string | null) {
+      return recordModalFailure({
+        orderId: o.orderId,
+        providerOrderId: o.providerOrderId,
+        providerPaymentId: claimedPaymentId,
+        code: "BAD_REQUEST_ERROR",
+        description: "Payment failed",
+      });
+    }
+
+    /** An attempt the provider has authorised, recorded through the callback. */
+    async function authorise(o: Pending): Promise<string> {
+      const { providerPaymentId, signature } = gateway.simulatePayment(
+        o.providerOrderId,
+        { status: "authorized" },
+      );
+      await confirmFromCallback({
+        orderId: o.orderId,
+        providerOrderId: o.providerOrderId,
+        providerPaymentId,
+        signature,
+      });
+      expect(await attempt(o)).toMatchObject({
+        status: "AUTHORIZED",
+        providerPaymentId,
+      });
+      return providerPaymentId;
+    }
+
+    it("a modal failure closes a CREATED attempt and never stores the browser's payment id", async () => {
+      const o = await pendingOrder();
+      await recordModalFailure({
+        orderId: o.orderId,
+        providerOrderId: o.providerOrderId,
+        providerPaymentId: "pay_BrowserSaid123",
+        code: "BAD_REQUEST_ERROR",
+        description: "Payment failed\nat the bank\u0007",
+      });
+      expect(await attempt(o)).toMatchObject({
+        status: "FAILED",
+        providerPaymentId: null,
+        failureCode: "BAD_REQUEST_ERROR",
+        failureDescription: "Payment failed at the bank",
+      });
+      const events = await failedEvents(o.orderId);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        actor: "CUSTOMER",
+        note: "Payment failed at the bank",
+        data: {
+          attemptNo: 1,
+          code: "BAD_REQUEST_ERROR",
+          source: "browser",
+          reportedPaymentId: "pay_BrowserSaid123",
+        },
+      });
+      // The order waits for another try, with its stock still held.
+      expect((await orderState(o.orderId)).order.status).toBe(
+        "PENDING_PAYMENT",
+      );
+      expect(await levels(o.variantId)).toEqual({
+        stockOnHand: 5,
+        reserved: 1,
+      });
+    });
+
+    it("drops a reported payment id that does not look like one", async () => {
+      const o = await pendingOrder();
+      await modalFailure(o, "<script>alert(1)</script>");
+      expect(await attempt(o)).toMatchObject({
+        status: "FAILED",
+        providerPaymentId: null,
+      });
+      const events = await failedEvents(o.orderId);
+      expect(events).toHaveLength(1);
+      expect(events[0]?.data).toEqual({
+        attemptNo: 1,
+        code: "BAD_REQUEST_ERROR",
+        source: "browser",
+      });
+    });
+
+    it("a modal failure naming a different payment leaves an AUTHORIZED attempt and its verified id alone", async () => {
+      const o = await pendingOrder();
+      const authorised = await authorise(o);
+      await modalFailure(o, "pay_SomeOtherPayment1");
+      expect(await attempt(o)).toMatchObject({
+        status: "AUTHORIZED",
+        providerPaymentId: authorised,
+        failedAt: null,
+        failureCode: null,
+      });
+      expect(await failedEvents(o.orderId)).toHaveLength(0);
+
+      // The verified capture of the authorised payment still confirms the order.
+      gateway.capturePayment(authorised);
+      expect(
+        await deliver(
+          "evt_cap_after_report",
+          capturedBody(o, authorised),
+          new Date(),
+        ),
+      ).toBe("processed");
+      expect(await attempt(o)).toMatchObject({
+        status: "CAPTURED",
+        providerPaymentId: authorised,
+      });
+      expect((await orderState(o.orderId)).order.status).toBe("CONFIRMED");
+    });
+
+    it("a modal failure naming the authorised payment itself still cannot downgrade it", async () => {
+      const o = await pendingOrder();
+      const authorised = await authorise(o);
+      await modalFailure(o, authorised);
+      expect(await attempt(o)).toMatchObject({
+        status: "AUTHORIZED",
+        providerPaymentId: authorised,
+        failedAt: null,
+        failureCode: null,
+      });
+      expect(await failedEvents(o.orderId)).toHaveLength(0);
+      expect(await authorizedEvents(o.orderId)).toBe(1);
+    });
+
+    it("a verified capture after a modal failure lands with the provider's id, not the browser's", async () => {
+      const o = await pendingOrder();
+      await modalFailure(o, "pay_BrowserClaimed1");
+      expect(await attempt(o)).toMatchObject({
+        status: "FAILED",
+        providerPaymentId: null,
+      });
+
+      const { providerPaymentId } = gateway.simulatePayment(o.providerOrderId, {
+        status: "captured",
+      });
+      expect(
+        await deliver(
+          "evt_cap_after_fail",
+          capturedBody(o, providerPaymentId),
+          new Date(),
+        ),
+      ).toBe("processed");
+      expect(await attempt(o)).toMatchObject({
+        status: "CAPTURED",
+        providerPaymentId,
+      });
+      expect((await orderState(o.orderId)).order.status).toBe("CONFIRMED");
+      expect(await levels(o.variantId)).toEqual({
+        stockOnHand: 4,
+        reserved: 0,
+      });
+    });
+
+    it("records one failure for duplicate modal submissions", async () => {
+      const o = await pendingOrder();
+      await Promise.all([
+        modalFailure(o, "pay_Duplicate1"),
+        modalFailure(o, "pay_Duplicate1"),
+      ]);
+      await modalFailure(o, "pay_Duplicate2");
+      expect(await attempt(o)).toMatchObject({
+        status: "FAILED",
+        providerPaymentId: null,
+      });
+      expect(await failedEvents(o.orderId)).toHaveLength(1);
+    });
+
+    it("a modal failure racing a verified capture ends captured, once, with the verified id", async () => {
+      const o = await pendingOrder();
+      const { providerPaymentId } = gateway.simulatePayment(o.providerOrderId, {
+        status: "captured",
+      });
+      const now = new Date();
+      const body = capturedBody(o, providerPaymentId);
+      await ingestWebhook({
+        rawBody: body,
+        signature: gateway.signWebhook(body),
+        eventId: "evt_race_failure",
+        now,
+      });
+      const [, webhook] = await Promise.all([
+        modalFailure(o, "pay_BrowserClaimed2"),
+        processWebhookEvent("evt_race_failure", { now }),
+      ]);
+      expect(webhook).toBe("processed");
+      expect(await attempt(o)).toMatchObject({
+        status: "CAPTURED",
+        providerPaymentId,
+      });
+      const state = await orderState(o.orderId);
+      expect(state.order.status).toBe("CONFIRMED");
+      expect(
+        state.eventTypes.filter((type) => type === "payment.captured"),
+      ).toHaveLength(1);
+      expect(
+        state.eventTypes.filter((type) => type === "payment.failed").length,
+      ).toBeLessThanOrEqual(1);
+      expect(await levels(o.variantId)).toEqual({
+        stockOnHand: 4,
+        reserved: 0,
+      });
+    });
+
+    it("a verified failure of another payment on the same provider order does not undo the authorisation", async () => {
+      const o = await pendingOrder();
+      const authorised = await authorise(o);
+      const other = gateway.simulatePayment(o.providerOrderId, {
+        status: "failed",
+        errorCode: "BAD_REQUEST_ERROR",
+      });
+
+      // By webhook...
+      expect(
+        await deliver(
+          "evt_other_failed",
+          failedBody(o, other.providerPaymentId),
+          new Date(),
+        ),
+      ).toBe("ignored");
+      // ...and by the callback, which fetches that payment from the provider.
+      expect(
+        await confirmFromCallback({
+          orderId: o.orderId,
+          providerOrderId: o.providerOrderId,
+          providerPaymentId: other.providerPaymentId,
+          signature: other.signature,
+        }),
+      ).toEqual({ kind: "failed" });
+
+      expect(await attempt(o)).toMatchObject({
+        status: "AUTHORIZED",
+        providerPaymentId: authorised,
+        failedAt: null,
+      });
+      expect(await failedEvents(o.orderId)).toHaveLength(0);
+    });
+
+    it("a verified failure of the authorised payment itself closes the attempt and keeps its id", async () => {
+      const o = await pendingOrder();
+      const authorised = await authorise(o);
+      expect(
+        await deliver(
+          "evt_authorised_failed",
+          failedBody(o, authorised),
+          new Date(),
+        ),
+      ).toBe("processed");
+      expect(await attempt(o)).toMatchObject({
+        status: "FAILED",
+        providerPaymentId: authorised,
+        failureCode: "BAD_REQUEST_ERROR",
+      });
+      const events = await failedEvents(o.orderId);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        actor: "WEBHOOK",
+        data: { source: "provider" },
+      });
     });
   });
 });

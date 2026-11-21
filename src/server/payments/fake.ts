@@ -36,7 +36,8 @@ type FakeOrder = {
   readonly currency: string;
 };
 
-type Operation = "createOrder" | "fetchPayment" | "createRefund";
+type Operation =
+  "createOrder" | "fetchPayment" | "fetchOrderPayments" | "createRefund";
 
 type InjectedFailure = {
   readonly retryable: boolean;
@@ -151,6 +152,8 @@ export function createFakeGateway(): FakePaymentGateway {
     },
 
     fetchOrderPayments(providerOrderId) {
+      const injected = takeFailure("fetchOrderPayments");
+      if (injected) return fail("fetchOrderPayments", injected.retryable);
       return Promise.resolve(
         [...payments.values()].filter(
           (payment) => payment.providerOrderId === providerOrderId,

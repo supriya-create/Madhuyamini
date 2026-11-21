@@ -27,7 +27,7 @@ const NOTICES: Record<string, string> = {
   acknowledged: "Alert acknowledged.",
 };
 
-const OUTBOX_STATUSES = ["PENDING", "FAILED", "SENT"] as const;
+const OUTBOX_STATUSES = ["PENDING", "FAILED", "SKIPPED", "SENT"] as const;
 const WEBHOOK_STATUSES = [
   "RECEIVED",
   "FAILED",

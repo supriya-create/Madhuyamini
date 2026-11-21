@@ -18,9 +18,10 @@ import * as data from "./data";
 import { queueRefundIntent } from "./refunds";
 
 /**
- * Applying provider facts to our records: transaction T5 (capture) and T6
- * (failure) of docs/checkout.md §5.5. Both take the facts as parameters and
- * never call the provider. Both are idempotent: a repeated capture or failure
+ * Applying provider facts to our records: transaction T5 (capture), T6
+ * (failure) and the authorisation note (`applyAuthorized`) of
+ * docs/checkout.md §5.5. All take the facts as parameters and never call the
+ * provider. All are idempotent: a repeated capture, failure or authorisation
  * for the same attempt changes nothing.
  */
 
@@ -407,18 +408,44 @@ async function queueRefund(
   return false;
 }
 
-export interface FailureFacts {
+interface FailureBase {
   readonly attemptId: string;
-  readonly providerPaymentId: string | null;
   readonly failureCode: string | null;
   readonly failureDescription: string | null;
   readonly actor: OrderActor;
   readonly now: Date;
 }
 
+/**
+ * Who says the payment failed decides what the report may do.
+ *
+ * `provider`: a signed webhook or a payment fetched from the provider. Its
+ * payment id is verified and is kept on the attempt.
+ *
+ * `browser`: the checkout modal's own report. It is a claim, not a fact, so
+ * it carries no `providerPaymentId` at all: the id the browser named can
+ * only travel as `reportedPaymentId`, into the event, never onto the attempt.
+ */
+export type FailureFacts = FailureBase &
+  (
+    | { readonly source: "provider"; readonly providerPaymentId: string }
+    | {
+        readonly source: "browser";
+        readonly reportedPaymentId: string | null;
+      }
+  );
+
 export type FailureOutcome = "failed" | "ignored";
 
-/** T6: a payment try did not go through. Never touches a captured attempt. */
+/**
+ * T6: a payment try did not go through. Never touches a captured attempt.
+ * A provider-verified failure closes a CREATED or AUTHORIZED attempt, unless
+ * the attempt is authorised by a different payment: one payment failing on a
+ * provider order does not undo another's authorisation, and a verified id is
+ * never replaced. A browser report closes a CREATED attempt only, and never
+ * writes a payment id. Either way a later verified capture still lands
+ * (FAILED → CAPTURED).
+ */
 export async function applyFailure(
   facts: FailureFacts,
 ): Promise<FailureOutcome> {
@@ -426,8 +453,10 @@ export async function applyFailure(
     const attempt = await data.findAttempt(facts.attemptId, tx);
     if (!attempt) return "ignored";
     await orders.lockOrder(tx, attempt.orderId);
+    const verified = facts.source === "provider";
     const moved = await data.markAttemptFailed(tx, attempt.id, {
-      providerPaymentId: facts.providerPaymentId,
+      from: verified ? ["CREATED", "AUTHORIZED"] : ["CREATED"],
+      providerPaymentId: verified ? facts.providerPaymentId : null,
       failureCode: facts.failureCode,
       failureDescription: facts.failureDescription,
       now: facts.now,
@@ -438,8 +467,118 @@ export async function applyFailure(
       type: "payment.failed",
       actor: facts.actor,
       note: facts.failureDescription,
-      data: { attemptNo: attempt.attemptNo, code: facts.failureCode },
+      data: {
+        attemptNo: attempt.attemptNo,
+        code: facts.failureCode,
+        source: facts.source,
+        ...(facts.source === "browser" && facts.reportedPaymentId
+          ? { reportedPaymentId: facts.reportedPaymentId }
+          : {}),
+      },
     });
     return "failed";
+  });
+}
+
+export interface AuthorizationFacts {
+  readonly attemptId: string;
+  /** The provider order the payment belongs to; must be the attempt's. */
+  readonly providerOrderId: string;
+  readonly providerPaymentId: string;
+  readonly amountInPaise: number;
+  readonly currency: string;
+  readonly actor: OrderActor;
+  readonly now: Date;
+}
+
+export type AuthorizeOutcome =
+  /** The attempt moved CREATED → AUTHORIZED and carries the payment id. */
+  | "authorized"
+  /** Already AUTHORIZED: nothing to do. */
+  | "already_authorized"
+  /** CAPTURED or REFUNDED: an authorisation never moves it back. */
+  | "already_captured"
+  /** Amount or currency differ from the order: nothing recorded on the attempt, an event notes it. */
+  | "mismatch"
+  /** Unknown attempt, a different provider order, or a state no authorisation can move (INITIATED, FAILED). */
+  | "not_applicable";
+
+/**
+ * A payment the provider reports as `authorized` (money reserved, capture
+ * pending). Shared by the webhook and the browser callback: both verify the
+ * facts against the provider first and pass them here. Only CREATED moves,
+ * under the order lock, so a capture that has already landed is never
+ * downgraded and two notifications record one event.
+ */
+export async function applyAuthorized(
+  facts: AuthorizationFacts,
+): Promise<AuthorizeOutcome> {
+  return db.$transaction(async (tx) => {
+    const attempt = await data.findAttempt(facts.attemptId, tx);
+    if (!attempt) return "not_applicable";
+    await orders.lockOrder(tx, attempt.orderId);
+    // Re-read under the lock: everything below trusts only this state.
+    const current = await data.findAttempt(facts.attemptId, tx);
+    const order = await tx.order.findUnique({
+      where: { id: attempt.orderId },
+      select: { id: true, totalInPaise: true, currency: true },
+    });
+    if (!current || !order) return "not_applicable";
+    if (current.providerOrderId !== facts.providerOrderId)
+      return "not_applicable";
+    if (current.status === "CAPTURED" || current.status === "REFUNDED")
+      return "already_captured";
+    if (current.status === "AUTHORIZED") return "already_authorized";
+    if (current.status !== "CREATED") return "not_applicable";
+
+    if (
+      facts.amountInPaise !== order.totalInPaise ||
+      facts.currency !== order.currency
+    ) {
+      // Noted once per payment: a repeated callback adds nothing.
+      const noted = await tx.orderEvent.findFirst({
+        where: {
+          orderId: order.id,
+          type: "payment.authorization_mismatch",
+          data: {
+            path: ["providerPaymentId"],
+            equals: facts.providerPaymentId,
+          },
+        },
+        select: { id: true },
+      });
+      if (noted) return "mismatch";
+      await orders.recordOrderEvent(tx, {
+        orderId: order.id,
+        type: "payment.authorization_mismatch",
+        actor: facts.actor,
+        note: `Authorised ${facts.amountInPaise} ${facts.currency}, order total ${order.totalInPaise} ${order.currency}; not recorded on the attempt.`,
+        data: {
+          attemptNo: current.attemptNo,
+          providerPaymentId: facts.providerPaymentId,
+          amountInPaise: facts.amountInPaise,
+          currency: facts.currency,
+        },
+      });
+      return "mismatch";
+    }
+
+    const moved = await data.markAttemptAuthorized(tx, current.id, {
+      providerPaymentId: facts.providerPaymentId,
+      now: facts.now,
+    });
+    if (!moved) return "already_authorized";
+    await orders.recordOrderEvent(tx, {
+      orderId: order.id,
+      type: "payment.authorized",
+      actor: facts.actor,
+      data: {
+        attemptNo: current.attemptNo,
+        providerPaymentId: facts.providerPaymentId,
+        amountInPaise: facts.amountInPaise,
+        currency: facts.currency,
+      },
+    });
+    return "authorized";
   });
 }

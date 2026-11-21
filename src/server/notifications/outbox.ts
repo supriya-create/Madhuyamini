@@ -6,8 +6,10 @@ import { env } from "@/server/env";
 /**
  * Durable notification queue (docs/checkout.md §11). Rows are written in the
  * transaction that creates the fact they announce; `dedupeKey` makes a
- * repeated transition a no-op. Rendering and sending live in
- * `src/server/notifications/service.ts` and the send-notifications job.
+ * repeated transition a no-op. A row with no recipient is stored as SKIPPED:
+ * the fact is recorded, nothing is sent, and the sender never claims it.
+ * Rendering and sending live in `src/server/notifications/service.ts` and
+ * the send-notifications job.
  */
 
 export type NotificationKind =
@@ -33,7 +35,8 @@ export type NotificationKind =
 export interface EnqueueNotification {
   readonly kind: NotificationKind;
   readonly orderId: string | null;
-  readonly recipient: string;
+  /** Null records the fact without sending anything (status SKIPPED). */
+  readonly recipient: string | null;
   /** Everything the template needs, captured now so a retry renders the same email. */
   readonly payload: Prisma.InputJsonValue;
   /** Defaults to `${kind}:${orderId}`; alerts pass their own. */
@@ -54,6 +57,7 @@ export async function enqueueNotification(
         dedupeKey,
         orderId: input.orderId,
         recipient: input.recipient,
+        status: input.recipient === null ? "SKIPPED" : "PENDING",
         payload: input.payload,
       },
     ],
@@ -83,7 +87,11 @@ export async function enqueueOrderConfirmed(
   }
 }
 
-/** An operations alert to the owner inbox, deduped by `key`; silently skipped when no inbox is set. */
+/**
+ * An operations alert, deduped by `key`. Always a row: with an inbox
+ * configured it is queued for email; without one it is stored SKIPPED so the
+ * admin alerts inbox still lists it. `options.inbox` exists for tests.
+ */
 export async function enqueueOpsAlert(
   tx: Prisma.TransactionClient,
   input: {
@@ -91,12 +99,14 @@ export async function enqueueOpsAlert(
     orderId: string | null;
     payload: Prisma.InputJsonValue;
   },
+  options: { readonly inbox?: string | null } = {},
 ): Promise<void> {
-  if (!env.notifications.ownerEmail) return;
+  const inbox =
+    options.inbox === undefined ? env.notifications.ownerEmail : options.inbox;
   await enqueueNotification(tx, {
     kind: "ops.alert",
     orderId: input.orderId,
-    recipient: env.notifications.ownerEmail,
+    recipient: inbox,
     payload: input.payload,
     dedupeKey: `ops.alert:${input.key}`,
   });

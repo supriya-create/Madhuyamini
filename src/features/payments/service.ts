@@ -10,7 +10,7 @@ import { getPaymentGateway } from "@/server/payments";
 import { PaymentGatewayError } from "@/server/payments/gateway";
 import { db } from "@/server/db";
 
-import { applyCapture, applyFailure } from "./capture";
+import { applyAuthorized, applyCapture, applyFailure } from "./capture";
 import type { CaptureOutcome } from "./capture";
 import * as data from "./data";
 
@@ -289,8 +289,10 @@ export async function confirmFromCallback(input: {
       return { kind: "confirmed", capture };
     }
     case "failed": {
+      // Fetched from the provider above, so the failure and its id are verified.
       await applyFailure({
         attemptId: attempt.id,
+        source: "provider",
         providerPaymentId: payment.providerPaymentId,
         failureCode: payment.errorCode,
         failureDescription: payment.errorDescription,
@@ -299,12 +301,48 @@ export async function confirmFromCallback(input: {
       });
       return { kind: "failed" };
     }
+    case "authorized": {
+      // Money is reserved and the capture is pending: note the payment on
+      // the attempt (verified above against the provider, never from the
+      // browser's own claim) and keep waiting. This never confirms.
+      await applyAuthorized({
+        attemptId: attempt.id,
+        providerOrderId: input.providerOrderId,
+        providerPaymentId: payment.providerPaymentId,
+        amountInPaise: payment.amountInPaise,
+        currency: payment.currency,
+        actor: "CUSTOMER",
+        now,
+      });
+      return { kind: "confirming" };
+    }
     default:
       return { kind: "confirming" };
   }
 }
 
-/** The modal reported a failure; informational, the order stays pending until its deadline. */
+/** Razorpay payment ids are `pay_` plus letters and digits; anything else the browser sends is dropped. */
+const REPORTED_PAYMENT_ID = /^pay_[A-Za-z0-9]{1,60}$/;
+
+function reportedPaymentId(value: string | null): string | null {
+  return value !== null && REPORTED_PAYMENT_ID.test(value) ? value : null;
+}
+
+/** Browser-supplied text kept for the record: one line, no control characters. */
+function plainText(value: string | null): string | null {
+  if (value === null) return null;
+  const cleaned = value.replace(/\p{Cc}+/gu, " ").trim();
+  return cleaned.length > 0 ? cleaned : null;
+}
+
+/**
+ * The modal reported a failure. This is the browser's word, not the
+ * provider's: it may close an attempt nothing has been paid on (CREATED →
+ * FAILED), never one the provider has authorised, and the payment id it
+ * names is noted in the event only (`provider_payment_id` holds
+ * provider-verified ids alone). The order stays pending until its deadline,
+ * and a later verified capture still lands.
+ */
 export async function recordModalFailure(input: {
   readonly orderId: string;
   readonly providerOrderId: string | null;
@@ -320,9 +358,10 @@ export async function recordModalFailure(input: {
   if (!attempt || attempt.orderId !== input.orderId) return;
   await applyFailure({
     attemptId: attempt.id,
-    providerPaymentId: input.providerPaymentId,
-    failureCode: input.code,
-    failureDescription: input.description,
+    source: "browser",
+    reportedPaymentId: reportedPaymentId(input.providerPaymentId),
+    failureCode: plainText(input.code),
+    failureDescription: plainText(input.description),
     actor: "CUSTOMER",
     now: input.now ?? new Date(),
   });
@@ -378,6 +417,7 @@ export async function reconcileAttempt(
   if (failed && !stillTrying) {
     await applyFailure({
       attemptId: attempt.id,
+      source: "provider",
       providerPaymentId: failed.providerPaymentId,
       failureCode: failed.errorCode,
       failureDescription: failed.errorDescription,

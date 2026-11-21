@@ -34,7 +34,7 @@ export interface OutboxRow {
   readonly id: string;
   readonly kind: string;
   readonly orderId: string | null;
-  readonly recipient: string;
+  readonly recipient: string | null;
   readonly payload: unknown;
   readonly dedupeKey: string;
 }
@@ -95,17 +95,20 @@ async function orderSummary(orderId: string): Promise<{
 export async function renderNotification(
   row: OutboxRow,
 ): Promise<EmailMessage> {
+  // SKIPPED rows are never claimed; a claimed row without an address is a bug.
+  const recipient = row.recipient;
+  if (recipient === null) throw new NotificationRenderError("no recipient");
   switch (row.kind) {
     case "order.confirmed": {
       if (!row.orderId) throw new NotificationRenderError("no order");
       const { summary } = await orderSummary(row.orderId);
-      return orderConfirmedMessage({ to: row.recipient, summary });
+      return orderConfirmedMessage({ to: recipient, summary });
     }
     case "owner.new_order": {
       if (!row.orderId) throw new NotificationRenderError("no order");
       const { summary, customerEmail } = await orderSummary(row.orderId);
       return ownerNewOrderMessage({
-        to: row.recipient,
+        to: recipient,
         summary,
         customerEmail,
       });
@@ -122,7 +125,7 @@ export async function renderNotification(
         "lost",
       ];
       return orderCancelledMessage({
-        to: row.recipient,
+        to: recipient,
         orderNumber,
         reason: known.find((value) => value === reason) ?? "timeout",
         cartUrl: absolute(routes.cart),
@@ -135,7 +138,7 @@ export async function renderNotification(
       if (!orderNumber || !carrier)
         throw new NotificationRenderError("shipment payload incomplete");
       return orderShippedMessage({
-        to: row.recipient,
+        to: recipient,
         orderNumber,
         carrier,
         trackingNumber: field(row.payload, "trackingNumber"),
@@ -147,7 +150,7 @@ export async function renderNotification(
       const orderNumber = field(row.payload, "orderNumber");
       if (!orderNumber) throw new NotificationRenderError("no order number");
       return orderDeliveredMessage({
-        to: row.recipient,
+        to: recipient,
         orderNumber,
         trackUrl: absolute(routes.trackOrder),
       });
@@ -156,7 +159,7 @@ export async function renderNotification(
       const orderNumber = field(row.payload, "orderNumber");
       if (!orderNumber) throw new NotificationRenderError("no order number");
       return orderDeliveryFailedMessage({
-        to: row.recipient,
+        to: recipient,
         orderNumber,
         trackUrl: absolute(routes.trackOrder),
       });
@@ -167,7 +170,7 @@ export async function renderNotification(
       if (!orderNumber || amount === null)
         throw new NotificationRenderError("refund payload incomplete");
       return refundRequestedMessage({
-        to: row.recipient,
+        to: recipient,
         orderNumber,
         amount: formatINR(amount),
         reason: field(row.payload, "reason") ?? "late_capture_no_stock",
@@ -185,7 +188,7 @@ export async function renderNotification(
         )
         .map(([key, value]) => `${key}: ${String(value)}`);
       return opsAlertMessage({
-        to: row.recipient,
+        to: recipient,
         title:
           field(row.payload, "reason") ??
           field(row.payload, "title") ??
@@ -207,7 +210,7 @@ export async function renderNotification(
         throw new NotificationRenderError("return payload incomplete");
       const returnUrl = absolute(routes.accountReturn(requestNumber));
       const common = {
-        to: row.recipient,
+        to: recipient,
         requestNumber,
         orderNumber,
         returnUrl,
@@ -309,7 +312,7 @@ export async function renderNotification(
       if (!requestNumber || !orderNumber)
         throw new NotificationRenderError("return payload incomplete");
       return ownerReturnRequestedMessage({
-        to: row.recipient,
+        to: recipient,
         requestNumber,
         orderNumber,
         units: numberField(row.payload, "units") ?? 0,
@@ -321,7 +324,7 @@ export async function renderNotification(
       if (remaining === null)
         throw new NotificationRenderError("recovery payload incomplete");
       return recoveryCodeUsedMessage({
-        to: row.recipient,
+        to: recipient,
         remaining,
         securityUrl: absolute(routes.accountTwoFactor),
       });

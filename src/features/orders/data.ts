@@ -250,14 +250,23 @@ export function touchAccessToken(id: string, now: Date, tx: Tx = db) {
   });
 }
 
-/** Pending online orders whose deadline has passed (the expiry sweep's candidates). */
+/**
+ * Pending online orders whose deadline has passed (the expiry sweep's
+ * candidates), oldest first. `excludeIds` lets one run leave behind the
+ * orders it has already handled or failed on.
+ */
 export function findExpiredPendingOrderIds(
   now: Date,
   limit: number,
+  excludeIds: readonly string[] = [],
   tx: Tx = db,
 ) {
   return tx.order.findMany({
-    where: { status: "PENDING_PAYMENT", pendingExpiresAt: { lt: now } },
+    where: {
+      status: "PENDING_PAYMENT",
+      pendingExpiresAt: { lt: now },
+      ...(excludeIds.length > 0 ? { id: { notIn: [...excludeIds] } } : {}),
+    },
     select: { id: true },
     orderBy: { pendingExpiresAt: "asc" },
     take: limit,

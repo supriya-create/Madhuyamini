@@ -7,6 +7,7 @@ import { ButtonLink } from "@/components/ui/Button";
 import { Container } from "@/components/ui/Container";
 import { findAccessibleOrder } from "@/features/orders/service";
 import { toOrderDetailView } from "@/features/orders/types";
+import { expireOverdueOrderFor } from "@/features/payments/expiry";
 import { routes } from "@/lib/routes";
 import { orderIdSchema } from "@/features/checkout/schemas";
 import { resolveOrderAccess } from "@/server/orders/context";
@@ -31,7 +32,17 @@ export default async function ConfirmationPage({
     if (access.kind === "anonymous") redirect(routes.trackOrder);
     notFound();
   }
-  const view = toOrderDetailView(found.row, found.exposure, new Date());
+  const now = new Date();
+  let view = toOrderDetailView(found.row, found.exposure, now);
+  if (view.status === "PENDING_PAYMENT" && !view.canPay) {
+    // Overdue: settle it now rather than show a stale "awaiting payment"
+    // until the sweep runs (B-23). Only overdue orders take this path.
+    const settled = await expireOverdueOrderFor(access, orderId, now);
+    if (settled.kind === "cancelled" || settled.kind === "confirmed") {
+      const again = await findAccessibleOrder(access, orderId, now);
+      if (again) view = toOrderDetailView(again.row, again.exposure, now);
+    }
+  }
   const justPlaced = query.placed === "1";
 
   return (

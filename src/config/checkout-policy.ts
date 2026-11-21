@@ -78,6 +78,8 @@ export const checkoutPolicySchema = z
         backoffMinutes: z.array(positiveInt).nonempty(),
         /** Database CHECKs bound attempts at 10. */
         maxAttempts: z.number().int().min(1).max(10),
+        /** Wall-clock budget for one scheduled run; the cron route allows 60 s. */
+        runBudgetSeconds: positiveInt,
       })
       .strict(),
     rateLimits: z
@@ -119,6 +121,7 @@ export const checkoutPolicy: CheckoutPolicy = checkoutPolicySchema.parse({
     leaseMinutes: 5,
     backoffMinutes: [1, 5, 15, 60, 180, 360, 720, 1440],
     maxAttempts: 8,
+    runBudgetSeconds: 45,
   },
   rateLimits: {
     placeOrder: { windowSeconds: 10 * 60, max: 5 },
@@ -151,6 +154,7 @@ export function backoffMinutesFor(
 }
 
 /** The only place minutes and days become milliseconds (keeps literals out of the jobs). */
+export const secondsToMs = (seconds: number): number => seconds * 1000;
 export const minutesToMs = (minutes: number): number => minutes * 60 * 1000;
 export const daysToMs = (days: number): number => days * 24 * 60 * 60 * 1000;
 export const hoursToMs = (hours: number): number => hours * 60 * 60 * 1000;

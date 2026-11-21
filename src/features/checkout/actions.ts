@@ -10,6 +10,7 @@ import { getCheckoutPolicy } from "@/config/checkout-policy";
 import { createAddress, findAddress } from "@/features/account/data";
 import { parseForm, pickFormValues } from "@/features/auth/form-data";
 import { withEchoedValues } from "@/features/auth/schemas";
+import { expireOverdueOrderFor } from "@/features/payments/expiry";
 import type { FormState } from "@/features/auth/schemas";
 import {
   OrderNotCancellableError,
@@ -303,6 +304,9 @@ export async function startPaymentAttemptAction(
     await startPaymentAttempt(orderId);
   } catch (error) {
     if (error instanceof PaymentNotAllowedError) {
+      // Past its deadline (or no longer pending): settle an overdue order
+      // now rather than leave its holds to the sweep (B-23).
+      await expireOverdueOrderFor(await resolveOrderAccess(), orderId);
       redirect(routes.checkoutConfirmation(orderId));
     }
     throw error;

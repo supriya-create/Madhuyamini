@@ -42,6 +42,9 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/features/orders/service", () => ({ findAccessibleOrder }));
 vi.mock("@/server/orders/context", () => ({ resolveOrderAccess }));
 vi.mock("@/features/payments/data", () => ({ findOpenAttempt: vi.fn() }));
+vi.mock("@/features/payments/expiry", () => ({
+  expireOverdueOrderFor: vi.fn(),
+}));
 vi.mock("@/server/payments", () => ({
   getPaymentGateway: vi.fn(),
   isFakeGateway: () => false,

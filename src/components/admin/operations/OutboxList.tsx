@@ -13,7 +13,12 @@ import type { OutboxView } from "@/features/admin/operations/service";
 import { formatDateTime } from "@/lib/dates";
 import { routes } from "@/lib/routes";
 
-const TONES = { PENDING: "warn", SENT: "good", FAILED: "bad" } as const;
+const TONES = {
+  PENDING: "warn",
+  SENT: "good",
+  FAILED: "bad",
+  SKIPPED: "warn",
+} as const;
 
 export function PayloadView({ payload }: { payload: unknown }) {
   return (
@@ -61,7 +66,7 @@ export function OutboxList({
           </div>
           <dl className={styles.dl}>
             <dt>To</dt>
-            <dd>{row.recipient}</dd>
+            <dd>{row.recipient ?? "No operations inbox configured"}</dd>
             <dt>Created</dt>
             <dd>{formatDateTime(row.createdAt)}</dd>
             {row.sentAt ? (
@@ -89,6 +94,13 @@ export function OutboxList({
             <dt>Dedupe key</dt>
             <dd className={styles.mono}>{row.dedupeKey}</dd>
           </dl>
+          {row.status === "SKIPPED" ? (
+            <p className={styles.muted}>
+              Recorded, not emailed: no operations inbox (ORDER_NOTIFY_EMAIL)
+              was configured when this alert was raised. It stays listed here
+              until it is acknowledged.
+            </p>
+          ) : null}
           <PayloadView payload={row.payload} />
           {mode === "alerts" && !row.acknowledged ? (
             <AdminActionForm

@@ -35,6 +35,8 @@ describe("checkout policy", () => {
     expect(policy.guestAccess.tokenTtlDays).toBe(7);
     expect(policy.payment.minOrderInPaise).toBe(100);
     expect(policy.jobs.maxAttempts).toBeLessThanOrEqual(10);
+    // Audit batch 4: one scheduled run stops before the 60-second route limit.
+    expect(policy.jobs.runBudgetSeconds).toBe(45);
   });
 
   it("rejects malformed policies instead of running with them", () => {

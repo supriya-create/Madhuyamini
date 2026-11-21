@@ -383,7 +383,7 @@ Nothing here writes `status = CAPTURED` from a form field; nothing marks an orde
 - **Outbox:** list by status with filters; FAILED rows show `lastError`; **Retry** (STAFF) resets `status = PENDING, attempts = 0, nextAttemptAt = now, claimedAt = null` (dedupe key unchanged, so a duplicate send is still impossible by key); **Discard** (ADMIN, reason) sets `FAILED` with a note. Payloads shown; recipients masked for STAFF.
 - **Webhook ledger:** list, filter by type/status, payload viewer with PII masked for STAFF (email, contact, vpa, card fields); **Re-apply** (ADMIN) resets to `RECEIVED` for `process-webhooks` (the handler is idempotent).
 - **Refund queue:** INITIATED / REQUESTED / FAILED with provider ids; retry per 5.5.
-- **Alerts:** the `ops.alert` outbox rows as an inbox with "acknowledge" (audit only).
+- **Alerts:** the `ops.alert` outbox rows as an inbox with "acknowledge" (audit only). Since audit batch 4 an alert raised while `ORDER_NOTIFY_EMAIL` is unset is still a row, shown as `SKIPPED` with "recorded, not emailed"; it cannot be retried or discarded, only acknowledged.
 
 ### 5.7 Customers (masked by default, refinements 3 and 4)
 
