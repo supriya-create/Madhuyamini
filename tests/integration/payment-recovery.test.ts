@@ -527,7 +527,10 @@ describe("webhook deliveries that cannot be applied (B-04)", () => {
       where: { id: "evt_transient" },
     });
     expect(ledger).toMatchObject({ status: "RECEIVED", attempts: 1 });
-    expect(ledger.lastError).toContain("cannot be applied");
+    // The ledger keeps a code and its fixed sentence, not the exception text.
+    expect(ledger.lastError).toBe(
+      "CAPTURE_NOT_APPLICABLE: A capture arrived for a payment attempt that is not in a state to accept one.",
+    );
     expect(ledger.nextAttemptAt.getTime()).toBeGreaterThan(now.getTime());
     // A duplicate delivery before the retry is due does not burn an attempt.
     expect(await processWebhookEvent("evt_transient", { now })).toBe("skipped");
@@ -592,7 +595,9 @@ describe("webhook deliveries that cannot be applied (B-04)", () => {
       attempts: checkoutPolicy.jobs.maxAttempts,
       orderId: o.orderId,
     });
-    expect(ledger.lastError).toContain("cannot be applied");
+    const notApplicable =
+      "CAPTURE_NOT_APPLICABLE: A capture arrived for a payment attempt that is not in a state to accept one.";
+    expect(ledger.lastError).toBe(notApplicable);
 
     const alerts = await testDb.notificationOutbox.findMany({
       where: { kind: "ops.alert" },
@@ -604,15 +609,32 @@ describe("webhook deliveries that cannot be applied (B-04)", () => {
       recipient: "owner@example.com",
       status: "PENDING",
     });
-    expect(alerts[0]?.payload).toMatchObject({
+    // The whole payload is compared, so an extra key cannot go unseen.
+    expect(alerts[0]?.payload).toStrictEqual({
+      reason: `Webhook payment.captured could not be applied after ${checkoutPolicy.jobs.maxAttempts} attempts; needs manual reconciliation`,
       eventId: "evt_exhausted",
       eventType: "payment.captured",
       providerOrderId: o.providerOrderId,
       providerPaymentId: capture.providerPaymentId,
       orderNumber: o.orderNumber,
       attempts: checkoutPolicy.jobs.maxAttempts,
+      lastError: notApplicable,
+      failure: {
+        code: "CAPTURE_NOT_APPLICABLE",
+        summary:
+          "A capture arrived for a payment attempt that is not in a state to accept one.",
+        source: "payment-webhook",
+        // The description says retrying could help; the job still gave up
+        // when its attempts ran out, as it always did.
+        retryable: true,
+        reference: "webhook:evt_exhausted",
+      },
     });
     expect(JSON.stringify(alerts[0]?.payload)).not.toContain(o.email);
+    // The thrown text named the payment and the order; none of it is kept.
+    expect(JSON.stringify(alerts[0]?.payload)).not.toContain(
+      "cannot be applied",
+    );
 
     // Nothing was applied, and a further run neither retries nor re-alerts.
     expect((await orderState(o.orderId)).order.payments[0]?.status).toBe(

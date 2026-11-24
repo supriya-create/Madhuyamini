@@ -299,7 +299,10 @@ describe("refund-payments", () => {
     expect(refund.status).toBe("INITIATED");
     expect(refund.attempts).toBe(1);
     expect(refund.nextAttemptAt.getTime()).toBeGreaterThan(now.getTime());
-    expect(refund.lastError).toMatch(/createRefund failed/);
+    // The provider's wording is not kept: a code and its fixed sentence are.
+    expect(refund.lastError).toBe(
+      "PAYMENT_PROVIDER_UNAVAILABLE: The payment provider could not be reached or did not answer in time.",
+    );
 
     const later = new Date(refund.nextAttemptAt.getTime() + minute);
     expect(await runRefundPayments({ now: later })).toMatchObject({
@@ -322,12 +325,38 @@ describe("refund-payments", () => {
       where: { id: r.refundId },
     });
     expect(refund.status).toBe("FAILED");
+    const rejected =
+      "PAYMENT_PROVIDER_REJECTED: The payment provider refused the request.";
+    expect(refund.lastError).toBe(rejected);
     const alerts = await testDb.notificationOutbox.findMany({
       where: { kind: "ops.alert", orderId: r.orderId },
     });
     expect(alerts.map((a) => a.dedupeKey)).toContain(
       `ops.alert:refund-failed:${r.reference}`,
     );
+    expect(
+      alerts.find((a) => a.dedupeKey.includes("refund-failed"))?.payload,
+    ).toEqual({
+      reason: "Refund could not be requested; needs a manual refund",
+      orderNumber: r.orderNumber,
+      reference: r.reference,
+      amountInPaise: r.totalInPaise,
+      lastError: rejected,
+      failure: {
+        code: "PAYMENT_PROVIDER_REJECTED",
+        summary: "The payment provider refused the request.",
+        source: "refund",
+        retryable: false,
+        reference: `refund:${r.reference}`,
+      },
+    });
+    expect(
+      (
+        await testDb.orderEvent.findFirstOrThrow({
+          where: { orderId: r.orderId, type: "refund.failed" },
+        })
+      ).note,
+    ).toBe(rejected);
     expect(
       (await testDb.order.findUniqueOrThrow({ where: { id: r.orderId } }))
         .status,
@@ -400,7 +429,10 @@ describe("send-notifications", () => {
       attempts: 1,
       claimedAt: null,
     });
-    expect(row.lastError).toContain("smtp down");
+    // The transport's own text is not kept: a code and its fixed sentence are.
+    const undelivered =
+      "EMAIL_DELIVERY_FAILED: The email provider did not accept the message or could not be reached.";
+    expect(row.lastError).toBe(undelivered);
     expect(row.nextAttemptAt.getTime()).toBe(
       now.getTime() + (checkoutPolicy.jobs.backoffMinutes[0] ?? 0) * minute,
     );
@@ -425,6 +457,30 @@ describe("send-notifications", () => {
     const alerts = after.filter((r) => r.kind === "ops.alert");
     expect(alerts).toHaveLength(2);
     expect(alerts.every((a) => a.recipient === "owner@example.com")).toBe(true);
+    // Each failed email has its own alert, and the alert holds exactly this:
+    // the whole payload is compared, so an extra key cannot go unseen.
+    for (const failed of after.filter((r) => r.status === "FAILED")) {
+      const alert = alerts.find(
+        (a) => a.dedupeKey === `ops.alert:notification-failed:${failed.id}`,
+      );
+      expect(alert?.payload).toStrictEqual({
+        reason: `Email ${failed.kind} could not be sent`,
+        recipient: failed.recipient,
+        notificationId: failed.id,
+        lastError: undelivered,
+        failure: {
+          code: "EMAIL_DELIVERY_FAILED",
+          summary:
+            "The email provider did not accept the message or could not be reached.",
+          source: "notification",
+          retryable: null,
+          reference: `notification:${failed.id}`,
+        },
+      });
+    }
+    expect(
+      after.filter((r) => r.status === "FAILED").map((r) => r.lastError),
+    ).toEqual([undelivered, undelivered]);
 
     // A failing alert does not spawn another alert.
     await testDb.notificationOutbox.updateMany({
@@ -653,9 +709,21 @@ describe("expire-reservations resilience (audit batch 4, B-23)", () => {
     });
     expect(alerts).toHaveLength(1);
     expect(alerts[0]?.dedupeKey).toMatch(/^ops\.alert:expire-failed:/);
-    expect(alerts[0]?.payload).toMatchObject({
+    // The whole payload is compared, so an extra key cannot go unseen.
+    expect(alerts[0]?.payload).toStrictEqual({
+      reason:
+        "An overdue order could not be expired; its stock holds are still active and need manual review",
       orderNumber: poisoned.orderNumber,
-      lastError: expect.stringContaining("out of step") as unknown,
+      lastError:
+        "INVENTORY_INCONSISTENT: The stock counters and the reservations for an item disagree.",
+      failure: {
+        code: "INVENTORY_INCONSISTENT",
+        summary:
+          "The stock counters and the reservations for an item disagree.",
+        source: "reservation-expiry",
+        retryable: false,
+        reference: `order:${poisoned.orderId}`,
+      },
     });
 
     // The next invocation tries again; the alert is one per order and day.
@@ -788,9 +856,21 @@ describe("expire-reservations resilience (audit batch 4, B-23)", () => {
     expect(alerts[0]?.dedupeKey).toBe(
       `ops.alert:expire-failed:${broken.orderId}:${now.toISOString().slice(0, 10)}`,
     );
-    expect(alerts[0]?.payload).toMatchObject({
+    // The whole payload is compared, so an extra key cannot go unseen.
+    expect(alerts[0]?.payload).toStrictEqual({
+      reason:
+        "An overdue order could not be expired; its stock holds are still active and need manual review",
       orderNumber: broken.orderNumber,
-      lastError: expect.stringContaining("out of step") as unknown,
+      lastError:
+        "INVENTORY_INCONSISTENT: The stock counters and the reservations for an item disagree.",
+      failure: {
+        code: "INVENTORY_INCONSISTENT",
+        summary:
+          "The stock counters and the reservations for an item disagree.",
+        source: "reservation-expiry",
+        retryable: false,
+        reference: `order:${broken.orderId}`,
+      },
     });
 
     // Still failing a day later: a fresh alert, so it cannot stay out of sight.

@@ -12,8 +12,9 @@ import { enqueueOpsAlert } from "@/server/notifications/outbox";
 import { getPaymentGateway } from "@/server/payments";
 import { PaymentGatewayError } from "@/server/payments/gateway";
 import type { GatewayRefund } from "@/server/payments/gateway";
+import { describeFailure, formatFailure } from "@/server/safe-failure";
 
-import { claimQueueRows, decideRetry, describeError, workerId } from "./queue";
+import { claimQueueRows, decideRetry, workerId } from "./queue";
 
 /**
  * Executes refund intents and follows them to completion (docs/checkout.md
@@ -85,7 +86,14 @@ export async function runRefundPayments(
         error instanceof PaymentGatewayError && !error.retryable
           ? { giveUp: true, nextAttemptAt: now }
           : decideRetry(policy, refund.attempts, now);
-      const lastError = describeError(error);
+      // Recorded as a code and its fixed sentence: the provider's wording
+      // and any other exception text stay out of the row, the event and the
+      // alert (src/server/safe-failure.ts).
+      const failure = describeFailure(error, {
+        source: "refund",
+        reference: `refund:${refund.reference}`,
+      });
+      const lastError = formatFailure(failure);
       await db.$transaction(async (tx) => {
         await orders.lockOrder(tx, refund.orderId);
         await tx.refund.update({
@@ -115,6 +123,7 @@ export async function runRefundPayments(
               reference: refund.reference,
               amountInPaise: refund.amountInPaise,
               lastError,
+              failure,
             },
           });
         }
@@ -177,7 +186,14 @@ export async function runRefundPayments(
     } catch (error) {
       await db.refund.update({
         where: { id },
-        data: { lastError: describeError(error) },
+        data: {
+          lastError: formatFailure(
+            describeFailure(error, {
+              source: "refund",
+              reference: `refund:${refund.reference}`,
+            }),
+          ),
+        },
       });
     }
     // Still pending at the provider: poll again later without using up attempts.

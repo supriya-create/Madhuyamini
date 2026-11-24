@@ -6,9 +6,11 @@ import { getCheckoutPolicy, minutesToMs } from "@/config/checkout-policy";
 import { Prisma } from "@/generated/prisma/client";
 import * as orders from "@/features/orders/data";
 import { db } from "@/server/db";
-import { decideRetry, describeError, workerId } from "@/server/jobs/queue";
+import { AppError } from "@/server/errors";
+import { decideRetry, workerId } from "@/server/jobs/queue";
 import { enqueueOpsAlert } from "@/server/notifications/outbox";
 import { getPaymentGateway } from "@/server/payments";
+import { describeFailure, formatFailure } from "@/server/safe-failure";
 
 import { applyAuthorized, applyCapture, applyFailure } from "./capture";
 import * as data from "./data";
@@ -154,7 +156,13 @@ export async function processWebhookEvent(
     return result.kind === "ignored" ? "ignored" : "processed";
   } catch (error) {
     const retry = decideRetry(policy, claim.attempts, now);
-    const lastError = describeError(error);
+    // Recorded as a code and its fixed sentence, never the exception's own
+    // text (src/server/safe-failure.ts).
+    const failure = describeFailure(error, {
+      source: "payment-webhook",
+      reference: `webhook:${eventId}`,
+    });
+    const lastError = formatFailure(failure);
     if (!retry.giveUp) {
       await db.paymentWebhookEvent.update({
         where: { id: eventId },
@@ -195,6 +203,7 @@ export async function processWebhookEvent(
           orderNumber: order?.order.orderNumber ?? "",
           attempts: claim.attempts,
           lastError,
+          failure,
         },
       });
     });
@@ -321,8 +330,9 @@ async function applyWebhook(
         // The attempt is in a state no capture can move (it never reached the
         // provider). Treat it as a failure so the retries and, at the end,
         // the alert keep the capture visible rather than marking it done.
-        throw new Error(
+        throw new AppError(
           `capture ${payment.id} cannot be applied to attempt ${attempt.attemptNo} of order ${attempt.order.orderNumber} (status ${attempt.status})`,
+          { code: "CAPTURE_NOT_APPLICABLE", status: 409 },
         );
       }
       return { kind: "processed", orderId: attempt.orderId };

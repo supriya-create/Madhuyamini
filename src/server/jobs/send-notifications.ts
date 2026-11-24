@@ -6,8 +6,9 @@ import { sendEmail } from "@/server/email";
 import type { EmailMessage } from "@/server/email/types";
 import { enqueueOpsAlert } from "@/server/notifications/outbox";
 import { renderNotification } from "@/server/notifications/service";
+import { describeFailure, formatFailure } from "@/server/safe-failure";
 
-import { claimQueueRows, decideRetry, describeError, workerId } from "./queue";
+import { claimQueueRows, decideRetry, workerId } from "./queue";
 
 /**
  * Drains the notification outbox (docs/checkout.md §11.1): claim, render,
@@ -48,9 +49,14 @@ export async function runSendNotifications(
   for (const id of ids) {
     const row = await db.notificationOutbox.findUnique({ where: { id } });
     if (!row || row.status !== "PENDING") continue;
+    // Which step an unrecognised error belongs to: building the email,
+    // handing it to the provider, or recording that it went.
+    let stage: "render" | "send" | "record" = "render";
     try {
       const message = await renderNotification(row);
+      stage = "send";
       await send({ ...message, idempotencyKey: row.dedupeKey });
+      stage = "record";
       await db.notificationOutbox.update({
         where: { id },
         data: { status: "SENT", sentAt: now, claimedAt: null, lastError: null },
@@ -58,7 +64,18 @@ export async function runSendNotifications(
       summary.sent += 1;
     } catch (error) {
       const retry = decideRetry(policy, row.attempts, now);
-      const lastError = describeError(error);
+      // Recorded as a code and its fixed sentence, never the exception's own
+      // text (src/server/safe-failure.ts).
+      const failure = describeFailure(error, {
+        source: "notification",
+        reference: `notification:${id}`,
+        ...(stage === "render"
+          ? { fallback: "EMAIL_RENDER_FAILED" as const }
+          : stage === "send"
+            ? { fallback: "EMAIL_DELIVERY_FAILED" as const }
+            : {}),
+      });
+      const lastError = formatFailure(failure);
       if (retry.giveUp) {
         await db.$transaction(async (tx) => {
           await tx.notificationOutbox.update({
@@ -74,6 +91,7 @@ export async function runSendNotifications(
                 recipient: row.recipient,
                 notificationId: id,
                 lastError,
+                failure,
               },
             });
           }

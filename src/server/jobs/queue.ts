@@ -91,7 +91,23 @@ export function workerId(job: string): string {
   return `${job}@${process.pid}:${Date.now().toString(36)}`;
 }
 
-/** Messages stored in `last_error`; never a stack or a secret. */
+/**
+ * An error as its class name and its own message: no stack, but the message
+ * is whatever the error says, which can include a query's values or a
+ * provider's wording. Not for operations alerts or anything shown to staff:
+ * those describe a failure with `describeFailure` (src/server/safe-failure.ts).
+ *
+ * Three callers remain, each still to be moved to `describeFailure` (a unit
+ * test in src/server/safe-failure.test.ts fails if the list changes):
+ * - features/payments/service.ts writes it to `payments.last_error` and to
+ *   the note of the `payment.provider_order_failed` and
+ *   `payment.provider_order_retry` order events, which the admin order page
+ *   shows to staff;
+ * - server/jobs/sweep-uploads.ts writes it to
+ *   `product_image_uploads.sweep_error`;
+ * - server/jobs/sweep-customer-uploads.ts writes it to
+ *   `customer_uploads.sweep_error`.
+ */
 export function describeError(error: unknown): string {
   if (error instanceof Error) return `${error.name}: ${error.message}`;
   return "Unknown error";

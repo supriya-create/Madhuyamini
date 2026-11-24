@@ -7,12 +7,12 @@ import { nextOrderStatus } from "@/features/orders/transitions";
 import type { OrderActor } from "@/generated/prisma/enums";
 import type { OrderAccess } from "@/server/orders/context";
 import { db } from "@/server/db";
-import { describeError } from "@/server/jobs/queue";
 import {
   enqueueNotification,
   enqueueOpsAlert,
 } from "@/server/notifications/outbox";
 import { PaymentGatewayError } from "@/server/payments/gateway";
+import { describeFailure, formatFailure } from "@/server/safe-failure";
 
 import type { CaptureOutcome } from "./capture";
 import * as data from "./data";
@@ -197,6 +197,12 @@ export async function reportExpiryFailure(
 ): Promise<void> {
   const day = now.toISOString().slice(0, 10);
   const alertKey = `expire-failed:${orderId}:${day}`;
+  // What went wrong, as a code and its fixed sentence: never the exception's
+  // own text (src/server/safe-failure.ts).
+  const failure = describeFailure(error, {
+    source: "reservation-expiry",
+    reference: `order:${orderId}`,
+  });
   try {
     await db.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
@@ -210,7 +216,8 @@ export async function reportExpiryFailure(
           reason:
             "An overdue order could not be expired; its stock holds are still active and need manual review",
           orderNumber: order?.orderNumber ?? "",
-          lastError: describeError(error),
+          lastError: formatFailure(failure),
+          failure,
         },
       });
     });
